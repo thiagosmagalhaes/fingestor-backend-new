@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import Stripe from "stripe";
-import supabase from "../config/database";
+import { getSupabaseClient, supabaseAdmin } from "../config/database";
 import { AuthRequest } from "../middleware/auth";
 
 // Inicializar Stripe
@@ -10,9 +10,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
 
 // Mapeamento de preços do Stripe
 const PRICE_IDS = {
-  mensal: "price_1SrlrJDKY42gdNF0z0tLxG3f",
-  semestral: "price_1SrlsDDKY42gdNF0AiNUdIPv",
-  anual: "price_1SrlrqDKY42gdNF0xtnl7giI",
+  mensal: process.env.STRIPE_PRICE_MENSAL || "",
+  semestral: process.env.STRIPE_PRICE_SEMESTRAL || "",
+  anual: process.env.STRIPE_PRICE_ANUAL || "",
 } as const;
 
 type PlanType = keyof typeof PRICE_IDS;
@@ -28,12 +28,15 @@ export const createCheckoutSession = async (
     const userId = req.user?.id;
     const { plan_type } = req.body;
 
-    if (!userId) {
+    if (!userId || !req.accessToken) {
       return res.status(401).json({
         error: "Unauthorized",
         message: "Usuário não autenticado",
       });
     }
+
+    // Criar cliente Supabase autenticado
+    const supabase = getSupabaseClient(req.accessToken);
 
     // Validar tipo de plano
     if (!plan_type || !["mensal", "semestral", "anual"].includes(plan_type)) {
@@ -246,12 +249,15 @@ export const getSubscriptionStatus = async (
   try {
     const userId = req.user?.id;
 
-    if (!userId) {
+    if (!userId || !req.accessToken) {
       return res.status(401).json({
         error: "Unauthorized",
         message: "Usuário não autenticado",
       });
     }
+
+    // Criar cliente Supabase autenticado
+    const supabase = getSupabaseClient(req.accessToken);
 
     // Buscar data de criação do usuário na tabela profiles
     const { data: profiles, error: profileError } = await supabase
@@ -349,12 +355,15 @@ export const cancelSubscription = async (
   try {
     const userId = req.user?.id;
 
-    if (!userId) {
+    if (!userId || !req.accessToken) {
       return res.status(401).json({
         error: "Unauthorized",
         message: "Usuário não autenticado",
       });
     }
+
+    // Criar cliente Supabase autenticado
+    const supabase = getSupabaseClient(req.accessToken);
 
     // Buscar assinatura ativa do usuário
     const { data: subscription, error: fetchError } = await supabase
@@ -412,12 +421,15 @@ export const reactivateSubscription = async (
   try {
     const userId = req.user?.id;
 
-    if (!userId) {
+    if (!userId || !req.accessToken) {
       return res.status(401).json({
         error: "Unauthorized",
         message: "Usuário não autenticado",
       });
     }
+
+    // Criar cliente Supabase autenticado
+    const supabase = getSupabaseClient(req.accessToken);
 
     // Buscar assinatura do usuário
     const { data: subscription, error: fetchError } = await supabase
@@ -481,27 +493,64 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   // Buscar subscription do Stripe
   const subscriptionId = session.subscription as string;
-  const subscriptionResponse =
-    await stripe.subscriptions.retrieve(subscriptionId);
+  const subscriptionResponse = await stripe.subscriptions.retrieve(subscriptionId);
+  const subscription: any = subscriptionResponse;
 
-  // Extrair dados da subscription
-  const subData = subscriptionResponse as any; // Type casting para evitar erros de tipo
+  console.log("Subscription data:", {
+    start_date: subscription.start_date,
+    current_period_end: subscription.current_period_end,
+    ended_at: subscription.ended_at,
+    status: subscription.status,
+  });
+
+  // Validar que temos o start_date
+  if (!subscription.start_date) {
+    console.error("start_date ausente na subscription:", subscription);
+    return;
+  }
+
+  // Converter start_date (timestamp Unix em segundos)
+  const startDate = new Date(subscription.start_date * 1000);
+  const currentPeriodStart = startDate.toISOString();
+
+  // Calcular current_period_end baseado no plan_type se não vier do Stripe
+  let endDate: Date;
+  
+  if (subscription.current_period_end) {
+    // Se o Stripe enviou, usar esse valor
+    endDate = new Date(subscription.current_period_end * 1000);
+  } else {
+    // Calcular baseado no tipo de plano
+    endDate = new Date(startDate);
+    
+    switch (planType) {
+      case "mensal":
+        endDate.setMonth(endDate.getMonth() + 1);
+        break;
+      case "semestral":
+        endDate.setMonth(endDate.getMonth() + 6);
+        break;
+      case "anual":
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        break;
+    }
+    
+    console.log(`current_period_end calculado baseado no plano ${planType}: ${endDate.toISOString()}`);
+  }
+  
+  const currentPeriodEnd = endDate.toISOString();
 
   // Salvar no banco de dados
-  const { error } = await supabase.from("subscriptions").insert({
+  const { error } = await supabaseAdmin.from("subscriptions").insert({
     user_id: userId,
     stripe_customer_id: session.customer as string,
     stripe_subscription_id: subscriptionId,
     plan_type: planType,
     price_id: PRICE_IDS[planType as PlanType],
-    status: subData.status,
-    current_period_start: new Date(
-      subData.current_period_start * 1000,
-    ).toISOString(),
-    current_period_end: new Date(
-      subData.current_period_end * 1000,
-    ).toISOString(),
-    cancel_at_period_end: subData.cancel_at_period_end,
+    status: subscription.status,
+    current_period_start: currentPeriodStart,
+    current_period_end: currentPeriodEnd,
+    cancel_at_period_end: subscription.cancel_at_period_end,
   });
 
   if (error) {
@@ -513,17 +562,24 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   // Type casting para acessar propriedades
   const sub = subscription as any;
 
-  const { error } = await supabase
+  // Buscar current_period_start e current_period_end dos items
+  const firstItem = sub.items?.data?.[0];
+  
+  const currentPeriodStart = firstItem?.current_period_start
+    ? new Date(firstItem.current_period_start * 1000).toISOString()
+    : null;
+  
+  const currentPeriodEnd = firstItem?.current_period_end
+    ? new Date(firstItem.current_period_end * 1000).toISOString()
+    : null;
+
+  const { error } = await supabaseAdmin
     .from("subscriptions")
     .update({
       status: sub.status,
-      current_period_start: sub.current_period_start
-        ? new Date(sub.current_period_start * 1000).toISOString()
-        : null,
-      current_period_end: sub.current_period_end
-        ? new Date(sub.current_period_end * 1000).toISOString()
-        : null,
-      cancel_at_period_end: sub.cancel_at_period_end,
+      current_period_start: currentPeriodStart,
+      current_period_end: currentPeriodEnd,
+      cancel_at_period_end: sub.cancel_at_period_end || false,
       canceled_at: sub.canceled_at
         ? new Date(sub.canceled_at * 1000).toISOString()
         : null,
@@ -536,7 +592,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("subscriptions")
     .update({
       status: "canceled",
@@ -559,7 +615,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 
   if (!subscriptionId) return;
 
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from("subscriptions")
     .update({
       status: "past_due",
