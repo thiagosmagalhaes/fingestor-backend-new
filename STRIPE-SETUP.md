@@ -1,17 +1,5 @@
 # Configuração de Variáveis de Ambiente para Stripe
 
-## Adicione ao seu arquivo `.env`
-
-```env
-# Stripe Configuration
-STRIPE_SECRET_KEY=
-STRIPE_PUBLISHABLE_KEY=
-STRIPE_WEBHOOK_SECRET=
-
-# Frontend URL (para redirects do Stripe Checkout)
-FRONTEND_URL=http://localhost:3000
-```
-
 ## Passos para Configurar o Webhook
 
 ### 1. Desenvolvimento Local (usando Stripe CLI)
