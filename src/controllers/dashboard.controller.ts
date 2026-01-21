@@ -14,7 +14,6 @@ import {
   DREData,
   DREMonthlyData,
   DREResponse,
-  DRECategoryItem,
   TransactionDateRange,
 } from '../types/dashboard.types';
  
