@@ -1,0 +1,374 @@
+[33mcommit f6ba5aedf428626914aa80c559692bd16323ec2f[m
+Author: Thiago <thiagodeipanema@gmail.com>
+Date:   Wed Jan 21 08:43:10 2026 -0300
+
+    feat: add subscription management with Stripe integration
+    
+    - Implemented subscription controller with methods for creating checkout sessions, handling webhooks, retrieving subscription status, canceling, and reactivating subscriptions.
+    - Added routes for subscription management in the Express app.
+    - Created a new database table for subscriptions with necessary fields and constraints.
+    - Updated profiles table to include email and sync email updates from auth.users.
+    - Added necessary migrations for creating subscriptions table and updating profiles.
+    - Included Stripe dependencies in package.json and package-lock.json.
+
+[1mdiff --git a/FRONTEND-SUBSCRIPTION-GUIDE.md b/FRONTEND-SUBSCRIPTION-GUIDE.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..50d16f3[m
+[1m--- /dev/null[m
+[1m+++ b/FRONTEND-SUBSCRIPTION-GUIDE.md[m
+[36m@@ -0,0 +1,802 @@[m
+[32m+[m[32m# Guia de Integração - Sistema de Assinaturas (Frontend)[m
+[32m+[m
+[32m+[m[32m## Visão Geral[m
+[32m+[m
+[32m+[m[32mEste documento descreve como integrar o sistema de assinaturas Stripe no frontend.[m[41m [m
+[32m+[m
+[32m+[m[32m**IMPORTANTE:** Todos os usuários ganham **15 dias grátis** ao se cadastrar. Durante esse período podem usar o sistema livremente sem precisar assinar. Quando faltarem 3 dias ou menos, o sistema começa a avisar que é necessário assinar.[m
+[32m+[m
+[32m+[m[32mTodas as requisições que exigem autenticação devem incluir o token JWT no header `Authorization: Bearer <token>`.[m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+[32m+[m[32m## 📌 Resumo Rápido[m
+[32m+[m
+[32m+[m[32m### Como Funciona[m
+[32m+[m
+[32m+[m[32m1. **Usuário se cadastra** → Ganha 15 dias grátis automaticamente[m
+[32m+[m[32m2. **Dias 1-12** → Usa normalmente, sem avisos[m
+[32m+[m[32m3. **Dias 13-15** → Sistema mostra banner: "Faltam X dias, assine agora!"[m
+[32m+[m[32m4. **Dia 16+** → Acesso bloqueado, precisa assinar[m
+[32m+[m[32m5. **Após assinar** → Acesso liberado indefinidamente[m
+[32m+[m
+[32m+[m[32m### Verificações Principais[m
+[32m+[m
+[32m+[m[32m```javascript[m
+[32m+[m[32m// Ao fazer login[m
+[32m+[m[32mconst status = await getSubscriptionStatus();[m
+[32m+[m
+[32m+[m[32m// ✅ Permitir acesso?[m
+[32m+[m[32mconst canAccess = !status.requires_subscription;[m
+[32m+[m
+[32m+[m[32m// ⚠️ Mostrar banner de aviso?[m
+[32m+[m[32mconst showBanner = status.warning_subscription && status.trial_days_remaining > 0;[m
+[32m+[m
+[32m+[m[32m// ❌ Bloquear e redirecionar?[m
+[32m+[m[32mconst mustBlock = status.requires_subscription;[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Estados Possíveis[m
+[32m+[m
+[32m+[m[32m| Status | Significado | Ação |[m
+[32m+[m[32m|--------|-------------|------|[m
+[32m+[m[32m| `trial_period` + `warning: false` | Teste, sem aviso | ✅ Liberar acesso |[m
+[32m+[m[32m| `trial_period` + `warning: true` | Teste, ≤3 dias | ⚠️ Liberar + Mostrar banner |[m
+[32m+[m[32m| `trial_expired` | Trial acabou | ❌ Bloquear, redirecionar |[m
+[32m+[m[32m| `active` | Assinatura paga | ✅ Liberar acesso completo |[m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+[32m+[m[32m## 1. Verificar se Usuário Tem Assinatura Ativa[m
+[32m+[m
+[32m+[m[32m### Endpoint[m
+[32m+[m[32m```[m
+[32m+[m[32mGET /api/subscriptions/status[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Headers Necessários[m
+[32m+[m[32m```[m
+[32m+[m[32mAuthorization: Bearer <jwt_token>[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Exemplo cURL[m
+[32m+[m[32m```bash[m
+[32m+[m[32mcurl -X GET http://localhost:3001/api/subscriptions/status \[m
+[32m+[m[32m  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Respostas Possíveis[m
+[32m+[m
+[32m+[m[32m#### ✅ Usuário no período de trial (primeiros 15 dias)[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "id": null,[m
+[32m+[m[32m  "plan_type": null,[m
+[32m+[m[32m  "status": "trial_period",[m
+[32m+[m[32m  "current_period_start": "2026-01-20T10:30:00.000Z",[m
+[32m+[m[32m  "current_period_end": "2026-02-04T10:30:00.000Z",[m
+[32m+[m[32m  "cancel_at_period_end": false,[m
+[32m+[m[32m  "trial_days_remaining": 10,[m
+[32m+[m[32m  "requires_subscription": false,[m
+[32m+[m[32m  "warning_subscription": false[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- `status: "trial_period"` → Usuário está usando os 15 dias grátis[m
+[32m+[m[32m- `trial_days_remaining` → Dias restantes do trial (10 neste exemplo)[m
+[32m+[m[32m- `requires_subscription: false` → Ainda não precisa assinar[m
+[32m+[m[32m- `warning_subscription: false` → Ainda tem mais de 3 dias[m
+[32m+[m[32m- Usuário pode usar normalmente o sistema[m
+[32m+[m
+[32m+[m[32m#### ⚠️ Usuário no trial com menos de 3 dias restantes[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "id": null,[m
+[32m+[m[32m  "plan_type": null,[m
+[32m+[m[32m  "status": "trial_period",[m
+[32m+[m[32m  "current_period_start": "2026-01-20T10:30:00.000Z",[m
+[32m+[m[32m  "current_period_end": "2026-02-04T10:30:00.000Z",[m
+[32m+[m[32m  "cancel_at_period_end": false,[m
+[32m+[m[32m  "trial_days_remaining": 2,[m
+[32m+[m[32m  "requires_subscription": false,[m
+[32m+[m[32m  "warning_subscription": true[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- `warning_subscription: true` → **MOSTRAR BANNER DE AVISO**[m
+[32m+[m[32m- `trial_days_remaining: 2` → Faltam 2 dias[m
+[32m+[m[32m- Mensagem sugerida: "Faltam 2 dias para seu período de teste expirar. Assine agora para continuar usando!"[m
+[32m+[m[32m- Botão: "Escolher Plano"[m
+[32m+[m
+[32m+[m[32m#### ❌ Trial expirado sem assinatura[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "id": null,[m
+[32m+[m[32m  "plan_type": null,[m
+[32m+[m[32m  "status": "trial_expired",[m
+[32m+[m[32m  "current_period_start": "2026-01-05T10:30:00.000Z",[m
+[32m+[m[32m  "current_period_end": "2026-01-20T10:30:00.000Z",[m
+[32m+[m[32m  "cancel_at_period_end": false,[m
+[32m+[m[32m  "trial_days_remaining": 0,[m
+[32m+[m[32m  "requires_subscription": true,[m
+[32m+[m[32m  "warning_subscription": true[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- `status: "trial_expired"` → Trial de 15 dias acabou[m
+[32m+[m[32m- `requires_subscription: true` → **BLOQUEAR ACESSO**[m
+[32m+[m[32m- Redirecionar para página de planos[m
+[32m+[m[32m- Mensagem: "Seu período de teste expirou. Escolha um plano para continuar."[m
+[32m+[m
+[32m+[m[32m#### ✅ Usuário com assinatura ativa[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",[m
+[32m+[m[32m  "plan_type": "mensal",[m
+[32m+[m[32m  "status": "active",[m
+[32m+[m[32m  "current_period_start": "2026-01-20T00:00:00.000Z",[m
+[32m+[m[32m  "current_period_end": "2026-02-20T00:00:00.000Z",[m
+[32m+[m[32m  "cancel_at_period_end": false,[m
+[32m+[m[32m  "trial_days_remaining": 0,[m
+[32m+[m[32m  "requires_subscription": false,[m
+[32m+[m[32m  "warning_subscription": false[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- `status: "active"` → Assinatura paga está ativa[m
+[32m+[m[32m- `plan_type: "mensal"` → Plano atual do usuário[m
+[32m+[m[32m- `current_period_end` → Data em que o período atual termina[m
+[32m+[m[32m- `cancel_at_period_end: false` → Assinatura vai renovar automaticamente[m
+[32m+[m[32m- Usuário tem acesso completo[m
+[32m+[m[32m#### ✅ Assinatura marcada para cancelamento[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",[m
+[32m+[m[32m  "plan_type": "semestral",[m
+[32m+[m[32m  "status": "active",[m
+[32m+[m[32m  "current_period_start": "2026-01-20T00:00:00.000Z",[m
+[32m+[m[32m  "current_period_end": "2026-07-20T00:00:00.000Z",[m
+[32m+[m[32m  "cancel_at_period_end": true,[m
+[32m+[m[32m  "trial_days_remaining": 0,[m
+[32m+[m[32m  "requires_subscription": false,[m
+[32m+[m[32m  "warning_subscription": false[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- `cancel_at_period_end: true` → Usuário cancelou, mas ainda pode usar até `current_period_end`[m
+[32m+[m[32m- Mostrar aviso: "Sua assinatura será cancelada em [data]"[m
+[32m+[m[32m- Oferecer opção para reativar[m
+[32m+[m
+[32m+[m[32m#### ❌ Token inválido[m
+[32m+[m[32m**Status: 401 Unauthorized**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "error": "Unauthorized",[m
+[32m+[m[32m  "message": "Usuário não autenticado"[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- Token JWT ausente ou inválido[m
+[32m+[m[32m- Redirecionar para login[m
+[32m+[m
+[32m+[m[32m### Estados de Assinatura[m
+[32m+[m
+[32m+[m[32m| Status | Significado | Usuário pode usar? | Mostrar banner? |[m
+[32m+[m[32m|--------|-------------|-------------------|-----------------|[m
+[32m+[m[32m| `trial_period` | Período grátis de 15 dias | ✅ Sim | ⚠️ Se `warning_subscription: true` |[m
+[32m+[m[32m| `trial_expired` | Trial expirado, sem assinatura | ❌ Não | ✅ Sim - Redirecionar |[m
+[32m+[m[32m| `active` | Assinatura ativa e paga | ✅ Sim | ❌ Não |[m
+[32m+[m[32m| `trialing` | (Não usado mais) | ✅ Sim | ❌ Não |[m
+[32m+[m[32m| `past_due` | Pagamento falhou | ⚠️ Depende da regra | ✅ Sim |[m
+[32m+[m[32m| `canceled` | Cancelada | ❌ Não | ✅ Sim |[m
+[32m+[m[32m| `unpaid` | Não paga | ❌ Não | ✅ Sim |[m
+[32m+[m[32m| `incomplete` | Pagamento incompleto | ❌ Não | ✅ Sim |[m
+[32m+[m
+[32m+[m[32m**Lógica recomendada para o frontend:**[m
+[32m+[m[32m```javascript[m
+[32m+[m[32mconst response = await getSubscriptionStatus();[m
+[32m+[m
+[32m+[m[32m// Verificar se pode usar o sistema[m
+[32m+[m[32mconst canUseSystem =[m[41m [m
+[32m+[m[32m  response.status === "active" ||[m[41m [m
+[32m+[m[32m  response.status === "trial_period";[m
+[32m+[m
+[32m+[m[32m// Verificar se deve mostrar banner de aviso[m
+[32m+[m[32mconst shouldShowBanner = response.warning_subscription === true;[m
+[32m+[m
+[32m+[m[32m// Verificar se DEVE bloquear acesso[m
+[32m+[m[32mconst mustBlock = response.requires_subscription === true;[m
+[32m+[m
+[32m+[m[32mif (mustBlock) {[m
+[32m+[m[32m  redirectTo("/pricing"); // Trial expirado, forçar escolha de plano[m
+[32m+[m[32m} else if (shouldShowBanner && response.trial_days_remaining > 0) {[m
+[32m+[m[32m  showBanner(`Faltam ${response.trial_days_remaining} dias. Assine agora!`);[m
+[32m+[m[32m} else if (canUseSystem) {[m
+[32m+[m[32m  // Permitir acesso normal[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+[32m+[m[32m## 2. Criar Nova Assinatura[m
+[32m+[m
+[32m+[m[32m### Endpoint[m
+[32m+[m[32m```[m
+[32m+[m[32mPOST /api/subscriptions/checkout[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Headers Necessários[m
+[32m+[m[32m```[m
+[32m+[m[32mAuthorization: Bearer <jwt_token>[m
+[32m+[m[32mContent-Type: application/json[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Body[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "plan_type": "mensal"[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Planos disponíveis:**[m
+[32m+[m[32m- `"mensal"` → Plano mensal[m
+[32m+[m[32m- `"semestral"` → Plano semestral (6 meses)[m
+[32m+[m[32m- `"anual"` → Plano anual (12 meses)[m
+[32m+[m
+[32m+[m[32m### Exemplo cURL[m
+[32m+[m[32m```bash[m
+[32m+[m[32mcurl -X POST http://localhost:3001/api/subscriptions/checkout \[m
+[32m+[m[32m  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \[m
+[32m+[m[32m  -H "Content-Type: application/json" \[m
+[32m+[m[32m  -d '{"plan_type":"mensal"}'[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Respostas Possíveis[m
+[32m+[m
+[32m+[m[32m#### ✅ Sessão de checkout criada[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "sessionId": "cs_test_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0",[m
+[32m+[m[32m  "url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3..."[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- `url` → Redirecionar o usuário para esta URL do Stripe[m
+[32m+[m[32m- Cobrança será imediata (usuário já usou os 15 dias grátis ao se cadastrar)[m
+[32m+[m[32m- **NÃO há período de trial no Stripe** (trial são os 15 dias iniciais)[m
+[32m+[m
+[32m+[m[32m**O que fazer no frontend:**[m
+[32m+[m[32m```javascript[m
+[32m+[m[32m1. Receber a resposta[m
+[32m+[m[32m2. Fazer: window.location.href = response.url[m
+[32m+[m[32m3. Usuário será redirecionado para checkout do Stripe[m
+[32m+[m[32m4. Após pagamento, Stripe redireciona para: /subscription/success?session_id=...[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m#### ❌ Usuário já tem assinatura ativa[m
+[32m+[m[32m**Status: 400 Bad Request**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "error": "Bad Request",[m
+[32m+[m[32m  "message": "Usuário já possui uma assinatura ativa"[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- Usuário tentou criar nova assinatura mas já tem uma ativa[m
+[32m+[m[32m- Redirecionar para página de gerenciamento de assinatura[m
+[32m+[m
+[32m+[m[32m#### ❌ Tipo de plano inválido[m
+[32m+[m[32m**Status: 400 Bad Request**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "error": "Bad Request",[m
+[32m+[m[32m  "message": "Tipo de plano inválido. Use: mensal, semestral ou anual"[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- Valor enviado no `plan_type` não é válido[m
+[32m+[m[32m- Verificar se está enviando exatamente: "mensal", "semestral" ou "anual"[m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+[32m+[m[32m## 3. Cancelar Assinatura[m
+[32m+[m
+[32m+[m[32m### Endpoint[m
+[32m+[m[32m```[m
+[32m+[m[32mPOST /api/subscriptions/cancel[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Headers Necessários[m
+[32m+[m[32m```[m
+[32m+[m[32mAuthorization: Bearer <jwt_token>[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Exemplo cURL[m
+[32m+[m[32m```bash[m
+[32m+[m[32mcurl -X POST http://localhost:3001/api/subscriptions/cancel \[m
+[32m+[m[32m  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m### Respostas Possíveis[m
+[32m+[m
+[32m+[m[32m#### ✅ Assinatura cancelada com sucesso[m
+[32m+[m[32m**Status: 200 OK**[m
+[32m+[m[32m```json[m
+[32m+[m[32m{[m
+[32m+[m[32m  "message": "Assinatura será cancelada no fim do período atual",[m
+[32m+[m[32m  "subscription": {[m
+[32m+[m[32m    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",[m
+[32m+[m[32m    "user_id": "user-uuid-here",[m
+[32m+[m[32m    "plan_type": "mensal",[m
+[32m+[m[32m    "status": "active",[m
+[32m+[m[32m    "current_period_end": "2026-02-20T00:00:00.000Z",[m
+[32m+[m[32m    "cancel_at_period_end": true[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Como interpretar:**[m
+[32m+[m[32m- Assinatura foi marcada para cancelamento[m
+[32m+[m[32m- Usuário ainda pode usar at�

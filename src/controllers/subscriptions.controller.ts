@@ -1,0 +1,572 @@
+import { Request, Response } from "express";
+import Stripe from "stripe";
+import supabase from "../config/database";
+import { AuthRequest } from "../middleware/auth";
+
+// Inicializar Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
+  apiVersion: "2025-12-15.clover",
+});
+
+// Mapeamento de preços do Stripe
+const PRICE_IDS = {
+  mensal: "price_1SrlrJDKY42gdNF0z0tLxG3f",
+  semestral: "price_1SrlsDDKY42gdNF0AiNUdIPv",
+  anual: "price_1SrlrqDKY42gdNF0xtnl7giI",
+} as const;
+
+type PlanType = keyof typeof PRICE_IDS;
+
+/**
+ * Criar sessão de checkout do Stripe
+ */
+export const createCheckoutSession = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void | Response> => {
+  try {
+    const userId = req.user?.id;
+    const { plan_type } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "Usuário não autenticado",
+      });
+    }
+
+    // Validar tipo de plano
+    if (!plan_type || !["mensal", "semestral", "anual"].includes(plan_type)) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Tipo de plano inválido. Use: mensal, semestral ou anual",
+      });
+    }
+
+    const priceId = PRICE_IDS[plan_type as PlanType];
+
+    // Buscar email do usuário na tabela profiles
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("user_id", userId)
+      .single();
+
+    if (profileError || !profiles || !profiles.email) {
+      return res.status(404).json({
+        error: "Not Found",
+        message: "Usuário não encontrado",
+      });
+    }
+
+    const userEmail = profiles.email;
+
+    // Verificar se usuário já tem subscription ativa
+    const { data: existingSubscription } = await supabase
+      .from("subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .in("status", ["active", "trialing"])
+      .single();
+
+    if (existingSubscription) {
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Usuário já possui uma assinatura ativa",
+      });
+    }
+
+    // Buscar ou criar customer do Stripe
+    let customerId: string;
+    const { data: existingCustomer } = await supabase
+      .from("subscriptions")
+      .select("stripe_customer_id")
+      .eq("user_id", userId)
+      .not("stripe_customer_id", "is", null)
+      .limit(1)
+      .single();
+
+    if (existingCustomer?.stripe_customer_id) {
+      customerId = existingCustomer.stripe_customer_id;
+    } else {
+      const customer = await stripe.customers.create({
+        email: userEmail,
+        metadata: {
+          user_id: userId,
+        },
+      });
+      customerId = customer.id;
+    }
+
+    // Garantir que a URL tenha protocolo
+    const frontendUrl = process.env.FRONTEND_URL || "";
+    const baseUrl = frontendUrl.startsWith("http") ? frontendUrl : `https://${frontendUrl}`;
+
+    // Criar sessão de checkout SEM trial (usuário já tem 15 dias grátis ao se cadastrar)
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: "subscription",
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      subscription_data: {
+        metadata: {
+          user_id: userId,
+          plan_type,
+        },
+      },
+      success_url: `${baseUrl}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${baseUrl}/subscription/cancel`,
+      metadata: {
+        user_id: userId,
+        plan_type,
+      },
+    });
+
+    return res.status(200).json({
+      sessionId: session.id,
+      url: session.url,
+    });
+  } catch (error: any) {
+    console.error("Erro ao criar sessão de checkout:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: error.message || "Erro ao criar sessão de checkout",
+    });
+  }
+};
+
+/**
+ * Webhook do Stripe para processar eventos
+ */
+export const handleStripeWebhook = async (
+  req: Request,
+  res: Response,
+): Promise<void | Response> => {
+  // A assinatura pode vir como string ou array, garantir que é string
+  const signatureHeader = req.headers["stripe-signature"];
+  const signature = Array.isArray(signatureHeader) 
+    ? signatureHeader[0] 
+    : signatureHeader;
+
+  if (!signature) {
+    return res.status(400).json({
+      error: "Bad Request",
+      message: "Assinatura do webhook ausente",
+    });
+  }
+
+  // Verificar se temos o webhook secret configurado
+  if (!process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error("STRIPE_WEBHOOK_SECRET não configurado!");
+    return res.status(500).json({
+      error: "Configuration Error",
+      message: "Webhook secret não configurado",
+    });
+  }
+
+  let event: Stripe.Event;
+
+  try {
+    // req.body deve ser um Buffer quando usamos express.raw()
+    if (!Buffer.isBuffer(req.body)) {
+      console.error("req.body não é um Buffer! Tipo:", typeof req.body);
+      return res.status(400).json({
+        error: "Bad Request",
+        message: "Body deve ser raw/buffer",
+      });
+    }
+
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET,
+    );
+    
+    console.log(`✅ Webhook verificado com sucesso: ${event.type}`);
+  } catch (error: any) {
+    console.error("Erro ao verificar webhook:", error);
+    return res.status(400).json({
+      error: "Webhook Error",
+      message: error.message,
+    });
+  }
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        await handleCheckoutCompleted(session);
+        break;
+      }
+
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as Stripe.Subscription;
+        await handleSubscriptionUpdated(subscription);
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        await handleSubscriptionDeleted(subscription);
+        break;
+      }
+
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        await handlePaymentFailed(invoice);
+        break;
+      }
+
+      default:
+        console.log(`Evento não tratado: ${event.type}`);
+    }
+
+    return res.status(200).json({ received: true });
+  } catch (error: any) {
+    console.error("Erro ao processar webhook:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: error.message,
+    });
+  }
+};
+
+/**
+ * Obter status da assinatura do usuário
+ */
+export const getSubscriptionStatus = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void | Response> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "Usuário não autenticado",
+      });
+    }
+
+    // Buscar data de criação do usuário na tabela profiles
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("created_at")
+      .eq("user_id", userId)
+      .limit(1);
+    
+    if (profileError || !profiles || profiles.length === 0) {
+      return res.status(500).json({
+        error: "Internal Server Error",
+        message: "Erro ao buscar informações do usuário",
+      });
+    }
+
+    const userCreatedAt = new Date(profiles[0].created_at);
+    const now = new Date();
+    const daysSinceCreation = Math.floor((now.getTime() - userCreatedAt.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Buscar assinatura ativa
+    const { data: activeSubscription, error: subError } = await supabase
+      .from("subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .in("status", ["active", "trialing"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    // Se tem assinatura ativa, retornar ela
+    if (activeSubscription && !subError) {
+      return res.status(200).json({
+        id: activeSubscription.id,
+        plan_type: activeSubscription.plan_type,
+        status: activeSubscription.status,
+        current_period_start: activeSubscription.current_period_start,
+        current_period_end: activeSubscription.current_period_end,
+        cancel_at_period_end: activeSubscription.cancel_at_period_end,
+        trial_days_remaining: 0,
+        requires_subscription: false,
+        warning_subscription: false,
+      });
+    }
+
+    // Não tem assinatura - verificar período de trial de 15 dias
+    if (daysSinceCreation < 15) {
+      const trialDaysRemaining = 15 - daysSinceCreation;
+      const trialEndDate = new Date(userCreatedAt);
+      trialEndDate.setDate(trialEndDate.getDate() + 15);
+
+      return res.status(200).json({
+        id: null,
+        plan_type: null,
+        status: "trial_period",
+        current_period_start: userCreatedAt.toISOString(),
+        current_period_end: trialEndDate.toISOString(),
+        cancel_at_period_end: false,
+        trial_days_remaining: trialDaysRemaining,
+        requires_subscription: false,
+        warning_subscription: trialDaysRemaining <= 3,
+      });
+    }
+
+    // Trial expirado
+    const trialEndDate = new Date(userCreatedAt);
+    trialEndDate.setDate(trialEndDate.getDate() + 15);
+
+    return res.status(200).json({
+      id: null,
+      plan_type: null,
+      status: "trial_expired",
+      current_period_start: userCreatedAt.toISOString(),
+      current_period_end: trialEndDate.toISOString(),
+      cancel_at_period_end: false,
+      trial_days_remaining: 0,
+      requires_subscription: true,
+      warning_subscription: true,
+    });
+  } catch (error: any) {
+    console.error("Erro ao buscar assinatura:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: error.message || "Erro ao buscar assinatura",
+    });
+  }
+};
+
+/**
+ * Cancelar assinatura
+ */
+export const cancelSubscription = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void | Response> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "Usuário não autenticado",
+      });
+    }
+
+    // Buscar assinatura ativa do usuário
+    const { data: subscription, error: fetchError } = await supabase
+      .from("subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .single();
+
+    if (fetchError || !subscription) {
+      return res.status(404).json({
+        error: "Not Found",
+        message: "Nenhuma assinatura ativa encontrada",
+      });
+    }
+
+    // Cancelar no Stripe
+    await stripe.subscriptions.update(subscription.stripe_subscription_id, {
+      cancel_at_period_end: true,
+    });
+
+    // Atualizar no banco de dados
+    const { error: updateError } = await supabase
+      .from("subscriptions")
+      .update({ cancel_at_period_end: true })
+      .eq("id", subscription.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return res.status(200).json({
+      message: "Assinatura será cancelada no fim do período atual",
+      subscription: {
+        ...subscription,
+        cancel_at_period_end: true,
+      },
+    });
+  } catch (error: any) {
+    console.error("Erro ao cancelar assinatura:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: error.message || "Erro ao cancelar assinatura",
+    });
+  }
+};
+
+/**
+ * Reativar assinatura cancelada
+ */
+export const reactivateSubscription = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void | Response> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "Usuário não autenticado",
+      });
+    }
+
+    // Buscar assinatura do usuário
+    const { data: subscription, error: fetchError } = await supabase
+      .from("subscriptions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("cancel_at_period_end", true)
+      .single();
+
+    if (fetchError || !subscription) {
+      return res.status(404).json({
+        error: "Not Found",
+        message: "Nenhuma assinatura cancelada encontrada",
+      });
+    }
+
+    // Reativar no Stripe
+    await stripe.subscriptions.update(subscription.stripe_subscription_id, {
+      cancel_at_period_end: false,
+    });
+
+    // Atualizar no banco de dados
+    const { error: updateError } = await supabase
+      .from("subscriptions")
+      .update({
+        cancel_at_period_end: false,
+        canceled_at: null,
+      })
+      .eq("id", subscription.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return res.status(200).json({
+      message: "Assinatura reativada com sucesso",
+      subscription: {
+        ...subscription,
+        cancel_at_period_end: false,
+      },
+    });
+  } catch (error: any) {
+    console.error("Erro ao reativar assinatura:", error);
+    return res.status(500).json({
+      error: "Internal Server Error",
+      message: error.message || "Erro ao reativar assinatura",
+    });
+  }
+};
+
+// ===== Funções auxiliares para processar webhooks =====
+
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  const userId = session.metadata?.user_id;
+  const planType = session.metadata?.plan_type;
+
+  if (!userId || !planType) {
+    console.error("Metadados ausentes no checkout session");
+    return;
+  }
+
+  // Buscar subscription do Stripe
+  const subscriptionId = session.subscription as string;
+  const subscriptionResponse =
+    await stripe.subscriptions.retrieve(subscriptionId);
+
+  // Extrair dados da subscription
+  const subData = subscriptionResponse as any; // Type casting para evitar erros de tipo
+
+  // Salvar no banco de dados
+  const { error } = await supabase.from("subscriptions").insert({
+    user_id: userId,
+    stripe_customer_id: session.customer as string,
+    stripe_subscription_id: subscriptionId,
+    plan_type: planType,
+    price_id: PRICE_IDS[planType as PlanType],
+    status: subData.status,
+    current_period_start: new Date(
+      subData.current_period_start * 1000,
+    ).toISOString(),
+    current_period_end: new Date(
+      subData.current_period_end * 1000,
+    ).toISOString(),
+    cancel_at_period_end: subData.cancel_at_period_end,
+  });
+
+  if (error) {
+    console.error("Erro ao salvar assinatura:", error);
+  }
+}
+
+async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+  // Type casting para acessar propriedades
+  const sub = subscription as any;
+
+  const { error } = await supabase
+    .from("subscriptions")
+    .update({
+      status: sub.status,
+      current_period_start: sub.current_period_start
+        ? new Date(sub.current_period_start * 1000).toISOString()
+        : null,
+      current_period_end: sub.current_period_end
+        ? new Date(sub.current_period_end * 1000).toISOString()
+        : null,
+      cancel_at_period_end: sub.cancel_at_period_end,
+      canceled_at: sub.canceled_at
+        ? new Date(sub.canceled_at * 1000).toISOString()
+        : null,
+    })
+    .eq("stripe_subscription_id", sub.id);
+
+  if (error) {
+    console.error("Erro ao atualizar assinatura:", error);
+  }
+}
+
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const { error } = await supabase
+    .from("subscriptions")
+    .update({
+      status: "canceled",
+      canceled_at: new Date().toISOString(),
+    })
+    .eq("stripe_subscription_id", subscription.id);
+
+  if (error) {
+    console.error("Erro ao cancelar assinatura:", error);
+  }
+}
+
+async function handlePaymentFailed(invoice: Stripe.Invoice) {
+  // Type casting para acessar propriedade subscription
+  const inv = invoice as any;
+  const subscriptionId =
+    typeof inv.subscription === "string"
+      ? inv.subscription
+      : inv.subscription?.id;
+
+  if (!subscriptionId) return;
+
+  const { error } = await supabase
+    .from("subscriptions")
+    .update({
+      status: "past_due",
+    })
+    .eq("stripe_subscription_id", subscriptionId);
+
+  if (error) {
+    console.error("Erro ao atualizar status da assinatura:", error);
+  }
+}
