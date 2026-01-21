@@ -7,12 +7,14 @@ interface CreateCategoryRequest {
   name: string;
   type: 'income' | 'expense';
   color: string;
+  nature?: 'COST' | 'EXPENSE';
 }
 
 interface UpdateCategoryRequest {
   name?: string;
   type?: 'income' | 'expense';
   color?: string;
+  nature?: 'COST' | 'EXPENSE';
 }
 
 export class CategoriesController {
@@ -99,7 +101,7 @@ export class CategoriesController {
   async create(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { companyId, name, type, color } = req.body as CreateCategoryRequest;
+      const { companyId, name, type, color, nature } = req.body as CreateCategoryRequest;
 
       // Validações
       if (!companyId) {
@@ -120,6 +122,21 @@ export class CategoriesController {
 
       if (!color || !color.match(/^#[0-9A-Fa-f]{6}$/)) {
         return res.status(400).json({ error: 'Cor deve estar no formato hexadecimal (#RRGGBB)' });
+      }
+
+      // Validação da nature
+      if (nature !== undefined) {
+        if (nature !== 'COST' && nature !== 'EXPENSE') {
+          return res.status(400).json({ error: 'Nature deve ser "COST" ou "EXPENSE"' });
+        }
+        if (type === 'income') {
+          return res.status(400).json({ error: 'Nature só pode ser definida para categorias de despesa' });
+        }
+      }
+
+      // Validar que categorias de despesa devem ter nature
+      if (type === 'expense' && !nature) {
+        return res.status(400).json({ error: 'Nature é obrigatória para categorias de despesa' });
       }
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
@@ -148,14 +165,21 @@ export class CategoriesController {
         return res.status(409).json({ error: 'Já existe uma categoria com este nome e tipo' });
       }
 
+      const insertData: any = {
+        company_id: companyId,
+        name: name.trim(),
+        type,
+        color: color.toUpperCase(),
+      };
+
+      // Adicionar nature apenas se for fornecida
+      if (nature) {
+        insertData.nature = nature;
+      }
+
       const { data: category, error } = await supabaseClient
         .from('categories')
-        .insert({
-          company_id: companyId,
-          name: name.trim(),
-          type,
-          color: color.toUpperCase(),
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -179,7 +203,7 @@ export class CategoriesController {
     try {
       const authReq = req as AuthRequest;
       const { id } = req.params;
-      const { name, type, color } = req.body as UpdateCategoryRequest;
+      const { name, type, color, nature } = req.body as UpdateCategoryRequest;
       const { companyId } = req.query;
 
       if (!id) {
@@ -208,7 +232,44 @@ export class CategoriesController {
         return res.status(400).json({ error: 'Cor deve estar no formato hexadecimal (#RRGGBB)' });
       }
 
+      // Validação da nature
+      if (nature !== undefined) {
+        if (nature !== 'COST' && nature !== 'EXPENSE') {
+          return res.status(400).json({ error: 'Nature deve ser "COST" ou "EXPENSE"' });
+        }
+      }
+
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
+
+      // Buscar categoria atual para validações
+      const { data: currentCategory } = await supabaseClient
+        .from('categories')
+        .select('type')
+        .eq('id', id)
+        .eq('company_id', companyId)
+        .single();
+
+      if (!currentCategory) {
+        return res.status(404).json({ error: 'Categoria não encontrada' });
+      }
+
+      // Determinar o tipo final da categoria
+      const finalType = type !== undefined ? type : currentCategory.type;
+
+      // Validar nature com base no tipo final
+      if (nature !== undefined && finalType === 'income') {
+        return res.status(400).json({ error: 'Nature só pode ser definida para categorias de despesa (expense)' });
+      }
+
+      // Se está mudando de expense para income, remover nature
+      if (type === 'income' && currentCategory.type === 'expense') {
+        // Nature será automaticamente removida pelo constraint do banco
+      }
+
+      // Se está mudando de income para expense, nature é obrigatória
+      if (type === 'expense' && currentCategory.type === 'income' && !nature) {
+        return res.status(400).json({ error: 'Nature é obrigatória ao mudar para categoria de despesa (expense)' });
+      }
 
       // Preparar dados para atualização
       const updateData: any = {};
@@ -219,10 +280,18 @@ export class CategoriesController {
 
       if (type !== undefined) {
         updateData.type = type;
+        // Se mudando para income, garantir que nature seja null
+        if (type === 'income') {
+          updateData.nature = null;
+        }
       }
 
       if (color !== undefined) {
         updateData.color = color.toUpperCase();
+      }
+
+      if (nature !== undefined) {
+        updateData.nature = nature;
       }
 
       // Se não há nada para atualizar
@@ -308,14 +377,19 @@ export class CategoriesController {
         .eq('company_id', companyId);
 
       if (error) {
+        // Verificar se é erro de violação de foreign key (categoria tem transações vinculadas)
+        if (error.code === '23503') {
+          return res.status(409).json({ 
+            error: 'Não é possível deletar esta categoria pois existem transações vinculadas a ela. Remova ou reatribua as transações antes de deletar a categoria.' 
+          });
+        }
         console.error('Error deleting category:', error);
         throw error;
       }
 
       res.json({ message: 'Categoria deletada com sucesso' });
     } catch (error) {
-      console.error('Error in delete category:', error);
-      res.status(500).json({ error: 'Erro ao deletar categoria' });
+      res.status(500).json({ error: 'Existem transações vinculadas a esta categoria. Remova ou reatribua as transações antes de deletar a categoria.' });
     }
   }
 }

@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { getSupabaseClient } from '../config/database';
+import supabase, { getSupabaseClient } from '../config/database';
 import { AuthRequest } from './auth';
 
 /**

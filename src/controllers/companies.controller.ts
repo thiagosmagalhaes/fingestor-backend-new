@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getSupabaseClient } from '../config/database';
+import supabase from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 
 interface CreateCompanyRequest {
@@ -20,7 +20,7 @@ export class CompaniesController {
   async getAll(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+      const supabaseClient = supabase;
 
       const { data: companies, error } = await supabaseClient
         .from('companies')
@@ -52,7 +52,7 @@ export class CompaniesController {
         return res.status(400).json({ error: 'ID da empresa é obrigatório' });
       }
 
-      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+      const supabaseClient = supabase;
 
       const { data: company, error } = await supabaseClient
         .from('companies')
@@ -101,7 +101,7 @@ export class CompaniesController {
         }
       }
 
-      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+      const supabaseClient = supabase;
 
       // Obter user_id do token
       const { data: { user } } = await supabaseClient.auth.getUser();
@@ -139,14 +139,14 @@ export class CompaniesController {
             { name: 'Freelance', type: 'income', color: '#3b82f6' },
             { name: 'Investimentos', type: 'income', color: '#8b5cf6' },
             { name: 'Outros Rendimentos', type: 'income', color: '#10b981' },
-            { name: 'Moradia', type: 'expense', color: '#ef4444' },
-            { name: 'Alimentação', type: 'expense', color: '#f97316' },
-            { name: 'Transporte', type: 'expense', color: '#eab308' },
-            { name: 'Saúde', type: 'expense', color: '#ec4899' },
-            { name: 'Educação', type: 'expense', color: '#14b8a6' },
-            { name: 'Lazer', type: 'expense', color: '#6366f1' },
-            { name: 'Contas e Serviços', type: 'expense', color: '#8b5cf6' },
-            { name: 'Outros', type: 'expense', color: '#64748b' },
+            { name: 'Moradia', type: 'expense', color: '#ef4444', nature: 'EXPENSE' },
+            { name: 'Alimentação', type: 'expense', color: '#f97316', nature: 'EXPENSE' },
+            { name: 'Transporte', type: 'expense', color: '#eab308', nature: 'EXPENSE' },
+            { name: 'Saúde', type: 'expense', color: '#ec4899', nature: 'EXPENSE' },
+            { name: 'Educação', type: 'expense', color: '#14b8a6', nature: 'EXPENSE' },
+            { name: 'Lazer', type: 'expense', color: '#6366f1', nature: 'EXPENSE' },
+            { name: 'Contas e Serviços', type: 'expense', color: '#8b5cf6', nature: 'EXPENSE' },
+            { name: 'Outros', type: 'expense', color: '#64748b', nature: 'EXPENSE' },
           ];
         } else {
           // Categorias para Pessoa Jurídica (CNPJ) ou sem documento
@@ -154,23 +154,30 @@ export class CompaniesController {
             { name: 'Vendas', type: 'income', color: '#22c55e' },
             { name: 'Serviços', type: 'income', color: '#3b82f6' },
             { name: 'Investimentos', type: 'income', color: '#8b5cf6' },
-            { name: 'Folha de Pagamento', type: 'expense', color: '#ef4444' },
-            { name: 'Aluguel', type: 'expense', color: '#f97316' },
-            { name: 'Impostos', type: 'expense', color: '#eab308' },
-            { name: 'Marketing', type: 'expense', color: '#ec4899' },
-            { name: 'Fornecedores', type: 'expense', color: '#14b8a6' },
-            { name: 'Utilidades', type: 'expense', color: '#6366f1' },
-            { name: 'Outros', type: 'expense', color: '#64748b' },
+            { name: 'Folha de Pagamento', type: 'expense', color: '#ef4444', nature: 'EXPENSE' },
+            { name: 'Aluguel', type: 'expense', color: '#f97316', nature: 'EXPENSE' },
+            { name: 'Impostos', type: 'expense', color: '#eab308', nature: 'EXPENSE' },
+            { name: 'Marketing', type: 'expense', color: '#ec4899', nature: 'EXPENSE' },
+            { name: 'Fornecedores', type: 'expense', color: '#14b8a6', nature: 'COST' },
+            { name: 'Utilidades', type: 'expense', color: '#6366f1', nature: 'EXPENSE' },
+            { name: 'Outros', type: 'expense', color: '#64748b', nature: 'EXPENSE' },
           ];
         }
 
         // Inserir categorias no banco
-        const categoriesToInsert = defaultCategories.map(cat => ({
-          company_id: company.id,
-          name: cat.name,
-          type: cat.type,
-          color: cat.color,
-        }));
+        const categoriesToInsert = defaultCategories.map((cat: any) => {
+          const category: any = {
+            company_id: company.id,
+            name: cat.name,
+            type: cat.type,
+            color: cat.color,
+          };
+          // Adicionar nature apenas para categorias de despesa
+          if (cat.nature) {
+            category.nature = cat.nature;
+          }
+          return category;
+        });
 
         const { error: categoriesError } = await supabaseClient
           .from('categories')
@@ -223,7 +230,7 @@ export class CompaniesController {
         }
       }
 
-      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+      const supabaseClient = supabase;
 
       // Preparar dados para atualização
       const updateData: any = {
@@ -273,7 +280,7 @@ export class CompaniesController {
         return res.status(400).json({ error: 'ID da empresa é obrigatório' });
       }
 
-      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+      const supabaseClient = supabase;
 
       const { error } = await supabaseClient
         .from('companies')

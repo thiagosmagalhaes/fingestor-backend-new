@@ -13,6 +13,12 @@ router.get('/all', (req, res) => dashboardController.getAllDashboardData(req, re
 // Rota de status de setup inicial (onboarding)
 router.get('/setup-status', (req, res) => dashboardController.getSetupStatus(req, res));
 
+// Rota do DRE (Demonstrativo de Resultados do Exercício)
+router.get('/dre', (req, res) => dashboardController.getDRE(req, res));
+
+// Rota para buscar período de transações (primeira e última)
+router.get('/transaction-date-range', (req, res) => dashboardController.getTransactionDateRange(req, res));
+
 // Rotas individuais
 router.get('/summary', (req, res) => dashboardController.getSummary(req, res));
 router.get('/overdue', (req, res) => dashboardController.getOverdue(req, res));

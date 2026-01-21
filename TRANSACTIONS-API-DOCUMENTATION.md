@@ -574,270 +574,184 @@ curl -X POST "http://localhost:3000/api/transactions/bulk" \
 
 ---
 
-## Tipos TypeScript
+### 7. Importar Transações em Lote
+**POST** `/api/transactions/import`
 
-```typescript
-type TransactionType = 'income' | 'expense';
-type TransactionStatus = 'paid' | 'pending' | 'scheduled';
+Importa transações em lote a partir de planilha Excel. Permite criar múltiplas transações de uma vez, com criação automática de categorias se necessário.
 
-interface Transaction {
-  id: string;
-  company_id: string;
-  category_id: string;
-  type: TransactionType;
-  description: string;
-  amount: number;
-  date: string; // YYYY-MM-DD
-  status: TransactionStatus;
-  payment_date: string | null; // ISO 8601
-  is_installment: boolean;
-  installment_number: number | null;
-  total_installments: number | null;
-  credit_card_id: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  category?: {
-    id: string;
-    name: string;
-    type: TransactionType;
-    color: string;
-  };
-  credit_card?: {
-    id: string;
-    name: string;
-    brand: string;
-  };
+#### Body (JSON):
+```json
+{
+  "transactions": [
+    {
+      "description": "Pagamento fornecedor",
+      "amount": 1500.50,
+      "type": "expense",
+      "category_name": "Fornecedores",
+      "company_cnpj": "12.345.678/0001-90",
+      "date": "2026-01-15",
+      "status": "paid",
+      "is_installment": false,
+      "installment_number": null,
+      "total_installments": null,
+      "is_credit_card": true,
+      "credit_card_name": "Visa Gold",
+      "notes": "Pagamento parcela 1/3"
+    },
+    {
+      "description": "Venda produto X",
+      "amount": 5000.00,
+      "type": "income",
+      "category_name": "Vendas",
+      "company_cnpj": "12.345.678/0001-90",
+      "date": "2026-01-20",
+      "status": "paid",
+      "is_installment": true,
+      "installment_number": 1,
+      "total_installments": 12,
+      "is_credit_card": false,
+      "credit_card_name": null,
+      "notes": null
+    }
+  ]
 }
 ```
 
----
+#### Campos do Array `transactions`:
+- `description` (string, obrigatório) - Descrição da transação
+- `amount` (number, obrigatório) - Valor da transação (sempre positivo)
+- `type` (string, obrigatório) - Tipo: `"income"` ou `"expense"`
+- `category_name` (string, obrigatório) - Nome da categoria (criar se não existir)
+- `company_cnpj` (string, obrigatório) - CNPJ da empresa (formato: XX.XXX.XXX/XXXX-XX)
+- `date` (string, obrigatório) - Data no formato ISO: `YYYY-MM-DD`
+- `status` (string, obrigatório) - Status: `"paid"`, `"pending"` ou `"scheduled"`
+- `is_installment` (boolean, obrigatório) - Se é parcelado
+- `installment_number` (number, nullable) - Número da parcela (se `is_installment: true`)
+- `total_installments` (number, nullable) - Total de parcelas (se `is_installment: true`)
+- `is_credit_card` (boolean, obrigatório) - Se é transação de cartão de crédito
+- `credit_card_name` (string, nullable) - Nome do cartão (se `is_credit_card: true`)
+- `notes` (string, nullable) - Observações adicionais
 
-## Exemplo de Hook React Completo
+#### Regras de Negócio:
+- ✅ Máximo de 1000 transações por requisição
+- ✅ CNPJ deve existir no banco de dados
+- ✅ Usuário autenticado deve ter permissão para a empresa
+- ✅ Se categoria não existir, criar automaticamente com cor padrão
+- ✅ Se `is_credit_card: true`, buscar cartão pelo nome (case-insensitive)
+- ✅ Se `is_installment: true`, validar `installment_number` ≤ `total_installments`
+- ✅ CNPJ aceita com ou sem máscara (XX.XXX.XXX/XXXX-XX ou XXXXXXXXXXXXXX)
+- ✅ Se alguma transação falhar, continuar processando as demais
+- ✅ Retornar detalhes de cada erro no array `errors`
 
-```typescript
-import { useState, useEffect } from 'react';
-import axios from 'axios';
+#### Respostas:
 
-interface TransactionFilters {
-  filter?: 'income' | 'expense' | 'scheduled' | 'pending';
-  searchQuery?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  categoryFilter?: string;
-  statusFilter?: 'all' | 'paid' | 'pending' | 'scheduled' | 'overdue';
-  from?: number;
-  to?: number;
+**200 OK - Importação bem-sucedida**
+```json
+{
+  "success": true,
+  "imported": 245,
+  "failed": 5,
+  "errors": [
+    {
+      "line": 3,
+      "description": "Pagamento aluguel",
+      "error": "Empresa com CNPJ 99.999.999/9999-99 não encontrada"
+    },
+    {
+      "line": 15,
+      "description": "Compra material",
+      "error": "Cartão de crédito \"Visa Platinum\" não encontrado para a empresa ABC Ltda"
+    }
+  ],
+  "categories_created": [
+    {
+      "name": "Fornecedores",
+      "type": "expense",
+      "company_id": "uuid-company-1"
+    },
+    {
+      "name": "Vendas",
+      "type": "income",
+      "company_id": "uuid-company-1"
+    }
+  ]
 }
-
-export const useTransactions = (companyId: string, filters?: TransactionFilters) => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchTransactions = async () => {
-    const token = localStorage.getItem('access_token');
-    setLoading(true);
-    
-    const params = new URLSearchParams({ companyId });
-    if (filters?.filter) params.append('filter', filters.filter);
-    if (filters?.searchQuery) params.append('searchQuery', filters.searchQuery);
-    if (filters?.dateFrom) params.append('dateFrom', filters.dateFrom);
-    if (filters?.dateTo) params.append('dateTo', filters.dateTo);
-    if (filters?.categoryFilter) params.append('categoryFilter', filters.categoryFilter);
-    if (filters?.statusFilter) params.append('statusFilter', filters.statusFilter);
-    if (filters?.from !== undefined) params.append('from', filters.from.toString());
-    if (filters?.to !== undefined) params.append('to', filters.to.toString());
-    
-    try {
-      const response = await axios.get(`/api/transactions?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      setTransactions(response.data.data);
-      setTotalCount(response.data.count);
-      setError(null);
-    } catch (err) {
-      setError('Erro ao carregar transações');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createTransaction = async (data: any) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      const response = await axios.post(
-        '/api/transactions',
-        { ...data, companyId },
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setTransactions([response.data, ...transactions]);
-      return response.data;
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  const createBulkTransactions = async (transactionsData: any[]) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      const response = await axios.post(
-        '/api/transactions/bulk',
-        { companyId, transactions: transactionsData },
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setTransactions([...response.data, ...transactions]);
-      return response.data;
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  const updateTransaction = async (id: string, updates: any) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      const response = await axios.put(
-        `/api/transactions/${id}?companyId=${companyId}`,
-        updates,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setTransactions(transactions.map(t => 
-        t.id === id ? response.data : t
-      ));
-      return response.data;
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  const deleteTransaction = async (id: string) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      await axios.delete(
-        `/api/transactions/${id}?companyId=${companyId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setTransactions(transactions.filter(t => t.id !== id));
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  useEffect(() => {
-    if (companyId) {
-      fetchTransactions();
-    }
-  }, [companyId, filters]);
-
-  return {
-    transactions,
-    totalCount,
-    loading,
-    error,
-    refetch: fetchTransactions,
-    createTransaction,
-    createBulkTransactions,
-    updateTransaction,
-    deleteTransaction
-  };
-};
-
-// Exemplo de uso com paginação
-const MyComponent = () => {
-  const [page, setPage] = useState(0);
-  const pageSize = 50;
-  
-  const { transactions, totalCount, loading } = useTransactions('company-id', {
-    from: page * pageSize,
-    to: (page + 1) * pageSize - 1,
-    statusFilter: 'overdue'
-  });
-  
-  const totalPages = Math.ceil(totalCount / pageSize);
-  
-  return (
-    <div>
-      {transactions.map(t => (
-        <div key={t.id}>{t.description}</div>
-      ))}
-      
-      <div>
-        Página {page + 1} de {totalPages} (Total: {totalCount} transações)
-        <button onClick={() => setPage(p => p - 1)} disabled={page === 0}>
-          Anterior
-        </button>
-        <button onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}>
-          Próxima
-        </button>
-      </div>
-    </div>
-  );
-};
 ```
 
----
-
-## Utilitários para Parcelamento
-
-```typescript
-// Gera array de transações parceladas
-export function generateInstallments(
-  baseData: Omit<Transaction, 'id' | 'installmentNumber' | 'description'>,
-  totalValue: number,
-  totalInstallments: number,
-  startDate: Date
-): any[] {
-  const installmentValue = totalValue / totalInstallments;
-  
-  return Array.from({ length: totalInstallments }, (_, index) => {
-    const installmentDate = new Date(startDate);
-    installmentDate.setMonth(installmentDate.getMonth() + index);
-    
-    return {
-      ...baseData,
-      description: `${baseData.description} - Parcela ${index + 1}/${totalInstallments}`,
-      amount: Number(installmentValue.toFixed(2)),
-      date: installmentDate.toISOString().split('T')[0],
-      status: index === 0 ? 'pending' : 'scheduled',
-      isInstallment: true,
-      installmentNumber: index + 1,
-      totalInstallments
-    };
-  });
+**400 Bad Request - Dados inválidos**
+```json
+{
+  "error": "Dados inválidos",
+  "message": "Array de transações está vazio ou não foi fornecido"
 }
-
-// Uso:
-const installments = generateInstallments(
-  {
-    companyId: '123',
-    categoryId: '456',
-    type: 'expense',
-    creditCardId: '789'
-  },
-  3500, // valor total
-  12,   // parcelas
-  new Date('2026-01-15')
-);
-
-await createBulkTransactions(installments);
 ```
 
+```json
+{
+  "error": "Limite excedido",
+  "message": "Máximo de 1000 transações por requisição"
+}
+```
+
+**500 Internal Server Error**
+```json
+{
+  "error": "Erro no servidor",
+  "message": "Erro ao processar importação em lote"
+}
+```
+
+#### Exemplo cURL:
+```bash
+curl -X POST "http://localhost:3000/api/transactions/import" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactions": [
+      {
+        "description": "Pagamento fornecedor ABC",
+        "amount": 1500.50,
+        "type": "expense",
+        "category_name": "Fornecedores",
+        "company_cnpj": "12.345.678/0001-90",
+        "date": "2026-01-15",
+        "status": "paid",
+        "is_installment": false,
+        "installment_number": null,
+        "total_installments": null,
+        "is_credit_card": true,
+        "credit_card_name": "Visa Gold",
+        "notes": "Pagamento à vista"
+      },
+      {
+        "description": "Venda produto X",
+        "amount": 5000.00,
+        "type": "income",
+        "category_name": "Vendas",
+        "company_cnpj": "12.345.678/0001-90",
+        "date": "2026-01-20",
+        "status": "paid",
+        "is_installment": true,
+        "installment_number": 1,
+        "total_installments": 12,
+        "is_credit_card": false,
+        "credit_card_name": null,
+        "notes": "Primeira parcela de 12"
+      }
+    ]
+  }'
+```
+
+#### Observações:
+- **Limite de requisição**: Máximo 1000 transações por chamada
+- **Timeout**: Backend configurado para processar até 60 segundos
+- **Cores das categorias**: Usa paleta padrão: `["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"]`
+- **Busca de cartão**: Case-insensitive e trim nos espaços
+- **CNPJ**: Aceita com ou sem máscara (XX.XXX.XXX/XXXX-XX ou XXXXXXXXXXXXXX)
+- **Cache**: Usa cache interno para empresas, categorias e cartões para melhorar performance
+
 ---
+
 
 ## Segurança
 
@@ -847,4 +761,7 @@ await createBulkTransactions(installments);
 - ✅ Validação de categoria e cartão
 - ✅ Validação de valores e datas
 - ✅ Limite de 100 transações por bulk create
+- ✅ Limite de 1000 transações por import
 - ✅ Sanitização de inputs (trim)
+- ✅ Criação automática de categorias no import
+- ✅ Validação de CNPJ e permissões no import

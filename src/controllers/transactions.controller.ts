@@ -602,6 +602,281 @@ export class TransactionsController {
       res.status(500).json({ error: 'Erro ao criar transações em lote' });
     }
   }
+
+  /**
+   * POST /api/transactions/import
+   * Importa transações em lote a partir de planilha Excel
+   */
+  async import(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const authReq = req as AuthRequest;
+      const { transactions } = req.body;
+
+      // Validação básica
+      if (!transactions || !Array.isArray(transactions) || transactions.length === 0) {
+        return res.status(400).json({
+          error: 'Dados inválidos',
+          message: 'Array de transações está vazio ou não foi fornecido',
+        });
+      }
+
+      // Limite de 1000 transações por requisição
+      if (transactions.length > 1000) {
+        return res.status(400).json({
+          error: 'Limite excedido',
+          message: 'Máximo de 1000 transações por requisição',
+        });
+      }
+
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+      const userId = authReq.user!.id;
+
+      const importedTransactions: any[] = [];
+      const errors: any[] = [];
+      const createdCategories: any[] = [];
+      const categoriesCache = new Map<string, any>(); // key: "companyId:categoryName:type"
+      const companiesCache = new Map<string, any>(); // key: "cnpj"
+      const creditCardsCache = new Map<string, any>(); // key: "companyId:cardName"
+
+      // Cores padrão para categorias
+      const defaultColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+      for (let i = 0; i < transactions.length; i++) {
+        const tx = transactions[i];
+        const lineNumber = i + 1;
+
+        try {
+          // Validação de campos obrigatórios
+          const requiredFields = ['description', 'amount', 'type', 'category_name', 'company_cnpj', 'date', 'status'];
+          const missingFields = requiredFields.filter(field => !tx[field]);
+
+          if (missingFields.length > 0) {
+            errors.push({
+              line: lineNumber,
+              description: tx.description || 'N/A',
+              error: `Campos obrigatórios faltando: ${missingFields.join(', ')}`,
+            });
+            continue;
+          }
+
+          // Normalizar CNPJ (remover pontuação)
+          const cnpj = tx.company_cnpj.replace(/[^\d]/g, '');
+
+          // Buscar empresa no cache ou banco
+          let company = companiesCache.get(cnpj);
+          if (!company) {
+            const { data: companyData, error: companyError } = await supabaseClient
+              .from('companies')
+              .select('id, name, cnpj')
+              .eq('user_id', userId)
+              .eq('cnpj', cnpj)
+              .single();
+
+            if (companyError || !companyData) {
+              errors.push({
+                line: lineNumber,
+                description: tx.description,
+                error: `Empresa com CNPJ ${tx.company_cnpj} não encontrada`,
+              });
+              continue;
+            }
+
+            company = companyData;
+            companiesCache.set(cnpj, company);
+          }
+
+          // Validar tipo
+          if (!['income', 'expense'].includes(tx.type)) {
+            errors.push({
+              line: lineNumber,
+              description: tx.description,
+              error: `Tipo inválido: ${tx.type}. Use "income" ou "expense"`,
+            });
+            continue;
+          }
+
+          // Validar status
+          if (!['paid', 'pending', 'scheduled'].includes(tx.status)) {
+            errors.push({
+              line: lineNumber,
+              description: tx.description,
+              error: `Status inválido: ${tx.status}. Use "paid", "pending" ou "scheduled"`,
+            });
+            continue;
+          }
+
+          // Validar data
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(tx.date)) {
+            errors.push({
+              line: lineNumber,
+              description: tx.description,
+              error: `Data inválida: ${tx.date}. Use formato YYYY-MM-DD`,
+            });
+            continue;
+          }
+
+          // Validar parcelamento
+          if (tx.is_installment) {
+            if (!tx.installment_number || !tx.total_installments) {
+              errors.push({
+                line: lineNumber,
+                description: tx.description,
+                error: 'Transações parceladas requerem installment_number e total_installments',
+              });
+              continue;
+            }
+
+            if (tx.installment_number > tx.total_installments) {
+              errors.push({
+                line: lineNumber,
+                description: tx.description,
+                error: `installment_number (${tx.installment_number}) não pode ser maior que total_installments (${tx.total_installments})`,
+              });
+              continue;
+            }
+          }
+
+          // Buscar ou criar categoria
+          const categoryKey = `${company.id}:${tx.category_name.toLowerCase().trim()}:${tx.type}`;
+          let category = categoriesCache.get(categoryKey);
+
+          if (!category) {
+            // Tentar buscar categoria existente
+            const { data: existingCategory } = await supabaseClient
+              .from('categories')
+              .select('*')
+              .eq('company_id', company.id)
+              .eq('type', tx.type)
+              .ilike('name', tx.category_name.trim())
+              .single();
+
+            if (existingCategory) {
+              category = existingCategory;
+            } else {
+              // Criar nova categoria
+              const nature = tx.type === 'expense' ? 'EXPENSE' : null;
+              const color = defaultColors[createdCategories.length % defaultColors.length];
+
+              const { data: newCategory, error: categoryError } = await supabaseClient
+                .from('categories')
+                .insert({
+                  company_id: company.id,
+                  name: tx.category_name.trim(),
+                  type: tx.type,
+                  color: color,
+                  nature: nature,
+                })
+                .select()
+                .single();
+
+              if (categoryError || !newCategory) {
+                errors.push({
+                  line: lineNumber,
+                  description: tx.description,
+                  error: `Não foi possível criar categoria "${tx.category_name}"`,
+                });
+                continue;
+              }
+
+              category = newCategory;
+              createdCategories.push({
+                name: category.name,
+                type: category.type,
+                company_id: category.company_id,
+              });
+            }
+
+            categoriesCache.set(categoryKey, category);
+          }
+
+          // Validar cartão de crédito se necessário
+          let creditCardId = null;
+          if (tx.is_credit_card && tx.credit_card_name) {
+            const cardKey = `${company.id}:${tx.credit_card_name.toLowerCase().trim()}`;
+            let creditCard = creditCardsCache.get(cardKey);
+
+            if (!creditCard) {
+              const { data: cardData, error: cardError } = await supabaseClient
+                .from('credit_cards')
+                .select('id, name')
+                .eq('company_id', company.id)
+                .ilike('name', tx.credit_card_name.trim())
+                .single();
+
+              if (cardError || !cardData) {
+                errors.push({
+                  line: lineNumber,
+                  description: tx.description,
+                  error: `Cartão de crédito "${tx.credit_card_name}" não encontrado para a empresa ${company.name}`,
+                });
+                continue;
+              }
+
+              creditCard = cardData;
+              creditCardsCache.set(cardKey, creditCard);
+            }
+
+            creditCardId = creditCard.id;
+          }
+
+          // Criar transação
+          const transactionData: any = {
+            company_id: company.id,
+            category_id: category.id,
+            type: tx.type,
+            description: tx.description,
+            amount: tx.amount,
+            date: tx.date,
+            status: tx.status,
+            is_installment: tx.is_installment || false,
+            installment_number: tx.installment_number || null,
+            total_installments: tx.total_installments || null,
+            is_credit_card: tx.is_credit_card || false,
+            credit_card_id: creditCardId,
+            notes: tx.notes || null,
+          };
+
+          const { data: createdTransaction, error: txError } = await supabaseClient
+            .from('transactions')
+            .insert(transactionData)
+            .select()
+            .single();
+
+          if (txError || !createdTransaction) {
+            errors.push({
+              line: lineNumber,
+              description: tx.description,
+              error: 'Erro ao inserir transação no banco de dados',
+            });
+            continue;
+          }
+
+          importedTransactions.push(createdTransaction);
+        } catch (error: any) {
+          errors.push({
+            line: lineNumber,
+            description: tx.description || 'N/A',
+            error: error.message || 'Erro desconhecido ao processar transação',
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        imported: importedTransactions.length,
+        failed: errors.length,
+        errors: errors,
+        categories_created: createdCategories,
+      });
+    } catch (error) {
+      console.error('Error in import transactions:', error);
+      res.status(500).json({
+        error: 'Erro no servidor',
+        message: 'Erro ao processar importação em lote',
+      });
+    }
+  }
 }
 
 export default new TransactionsController();

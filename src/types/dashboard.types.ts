@@ -74,3 +74,43 @@ export interface TransactionFromDB {
   categories?: { name: string, color: string }[] | { name: string, color: string } | null;
   credit_cards?: { name: string }[] | { name: string } | null;
 }
+
+export interface DRECategoryItem {
+  category_name: string;
+  category_color?: string;
+  total: number;
+}
+
+export interface DREData {
+  receitas: number;
+  receitas_categorias: DRECategoryItem[];
+  custos: number;
+  custos_categorias: DRECategoryItem[];
+  despesas: number;
+  despesas_categorias: DRECategoryItem[];
+  lucro_bruto: number;
+  lucro_liquido: number;
+}
+
+export interface DREMonthlyData extends DREData {
+  month: string; // Formato: YYYY-MM
+  month_name: string; // Formato: Jan/2026
+}
+
+export interface DREResponse {
+  current?: DREData;
+  monthly?: DREMonthlyData[];
+}
+
+export interface TransactionDateRange {
+  first_transaction: {
+    month: number;
+    year: number;
+    date: string;
+  } | null;
+  last_transaction: {
+    month: number;
+    year: number;
+    date: string;
+  } | null;
+}

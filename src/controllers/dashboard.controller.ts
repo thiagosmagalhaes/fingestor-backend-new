@@ -11,6 +11,11 @@ import {
   CashFlowRPCResult,
   TransactionFromDB,
   SetupStatus,
+  DREData,
+  DREMonthlyData,
+  DREResponse,
+  DRECategoryItem,
+  TransactionDateRange,
 } from '../types/dashboard.types';
  
 export class DashboardController {
@@ -31,8 +36,11 @@ export class DashboardController {
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const startOfMonth = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999);
 
       const { data, error } = await supabaseClient.rpc('get_dashboard_summary', {
         p_company_id: companyId,
@@ -169,8 +177,11 @@ export class DashboardController {
 
       // Calcular data do mês atual
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const startOfMonth = new Date(year, month, 1).toISOString();
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999).toISOString();
 
       // 1. Buscar todas as categorias de despesa da empresa
       const { data: categories, error: categoriesError } = await supabaseClient
@@ -290,8 +301,11 @@ export class DashboardController {
       const limitCount = parseInt(limit as string, 10) || 10;
 
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const startOfMonth = new Date(year, month, 1).toISOString();
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999).toISOString();
 
       const { data: transactions, error } = await supabaseClient
         .from('transactions')
@@ -425,8 +439,11 @@ export class DashboardController {
   private async getSummaryData(companyId: string, accessToken: string): Promise<DashboardSummary> {
     const supabaseClient = getSupabaseClient(accessToken);
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const startOfMonth = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999);
 
     const { data } = await supabaseClient.rpc('get_dashboard_summary', {
       p_company_id: companyId,
@@ -480,8 +497,11 @@ export class DashboardController {
 
     // Calcular data do mês atual
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const startOfMonth = new Date(year, month, 1).toISOString();
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999).toISOString();
 
     // 1. Buscar todas as categorias de despesa da empresa
     const { data: categories } = await supabaseClient
@@ -633,6 +653,203 @@ export class DashboardController {
   }
 
   /**
+   * GET /api/dashboard/dre?companyId=xxx&period=current|12months&month=1-12&year=YYYY
+   * Retorna dados do DRE (Demonstrativo de Resultados do Exercício)
+   * Com period=current: retorna DRE do mês especificado (ou mês atual se não informado)
+   * Com period=12months: retorna DRE dos últimos 12 meses, mês a mês
+   */
+  async getDRE(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const authReq = req as AuthRequest;
+      const { companyId, period = 'current', month, year } = req.query;
+
+      if (!companyId || typeof companyId !== 'string') {
+        return res.status(400).json({ error: 'companyId é obrigatório' });
+      }
+
+      if (period !== 'current' && period !== '12months') {
+        return res.status(400).json({ error: 'period deve ser "current" ou "12months"' });
+      }
+
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+
+      if (period === 'current') {
+        // DRE do mês especificado ou mês atual
+        const now = new Date();
+        let targetYear = now.getFullYear();
+        let targetMonth = now.getMonth(); // 0-11
+
+        // Se year foi fornecido, validar e usar
+        if (year && typeof year === 'string') {
+          const yearNum = parseInt(year, 10);
+          if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+            return res.status(400).json({ error: 'year deve ser um ano válido (2000-2100)' });
+          }
+          targetYear = yearNum;
+        }
+
+        // Se month foi fornecido, validar e usar
+        if (month && typeof month === 'string') {
+          const monthNum = parseInt(month, 10);
+          if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+            return res.status(400).json({ error: 'month deve ser um número entre 1 e 12' });
+          }
+          targetMonth = monthNum - 1; // Converter para 0-11
+        }
+
+        const dreData = await this.calculateDRE(supabaseClient, companyId, targetMonth + 1, targetYear); // targetMonth + 1 porque JS usa 0-11
+        
+        const response: DREResponse = {
+          current: dreData,
+        };
+
+        return res.json(response);
+      } else {
+        // DRE dos últimos 12 meses
+        const monthlyData: DREMonthlyData[] = [];
+        const now = new Date();
+
+        for (let i = 11; i >= 0; i--) {
+          const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const year = date.getFullYear();
+          const month = date.getMonth() + 1; // Converter para 1-12
+
+          const dreData = await this.calculateDRE(supabaseClient, companyId, month, year);
+          
+          const monthStr = date.toISOString().substring(0, 7); // YYYY-MM
+          const monthName = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
+            .replace('.', '')
+            .replace(/^\w/, (c) => c.toUpperCase()); // Capitalizar primeira letra
+
+          monthlyData.push({
+            ...dreData,
+            month: monthStr,
+            month_name: monthName,
+          });
+        }
+
+        const response: DREResponse = {
+          monthly: monthlyData,
+        };
+
+        return res.json(response);
+      }
+    } catch (error) {
+      console.error('Error in getDRE:', error);
+      res.status(500).json({ error: 'Erro ao buscar dados do DRE' });
+    }
+  }
+
+  /**
+   * Calcula o DRE para um mês/ano específico usando RPC do Supabase
+   */
+  private async calculateDRE(
+    supabaseClient: any,
+    companyId: string,
+    month: number,
+    year: number
+  ): Promise<DREData> {
+    const { data, error } = await supabaseClient.rpc('get_dre_data', {
+      p_company_id: companyId,
+      p_month: month,
+      p_year: year,
+    });
+
+    if (error) {
+      console.error('Error calling get_dre_data:', error);
+      throw error;
+    }
+
+    return {
+      receitas: Number(data.receitas || 0),
+      receitas_categorias: data.receitas_categorias || [],
+      custos: Number(data.custos || 0),
+      custos_categorias: data.custos_categorias || [],
+      despesas: Number(data.despesas || 0),
+      despesas_categorias: data.despesas_categorias || [],
+      lucro_bruto: Number(data.lucro_bruto || 0),
+      lucro_liquido: Number(data.lucro_liquido || 0),
+    };
+  }
+
+  /**
+   * GET /api/dashboard/transaction-date-range?companyId=xxx
+   * Retorna o mês/ano da primeira e última transação da empresa
+   */
+  async getTransactionDateRange(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const authReq = req as AuthRequest;
+      const { companyId } = req.query;
+
+      if (!companyId || typeof companyId !== 'string') {
+        return res.status(400).json({ error: 'companyId é obrigatório' });
+      }
+
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
+
+      // Buscar primeira e última transação em paralelo
+      const [firstResult, lastResult] = await Promise.all([
+        // Primeira transação (mais antiga)
+        supabaseClient
+          .from('transactions')
+          .select('date')
+          .eq('company_id', companyId)
+          .order('date', { ascending: true })
+          .limit(1),
+        
+        // Última transação (mais recente)
+        supabaseClient
+          .from('transactions')
+          .select('date')
+          .eq('company_id', companyId)
+          .order('date', { ascending: false })
+          .limit(1),
+      ]);
+
+      if (firstResult.error) {
+        console.error('Error fetching first transaction:', firstResult.error);
+        throw firstResult.error;
+      }
+
+      if (lastResult.error) {
+        console.error('Error fetching last transaction:', lastResult.error);
+        throw lastResult.error;
+      }
+
+      // Se não há transações
+      if (!firstResult.data || firstResult.data.length === 0) {
+        const response: TransactionDateRange = {
+          first_transaction: null,
+          last_transaction: null,
+        };
+        return res.json(response);
+      }
+
+      const firstDate = new Date(firstResult.data[0].date);
+      const lastDate = new Date(lastResult.data![0].date);
+
+      const response: TransactionDateRange = {
+        first_transaction: {
+          month: firstDate.getMonth() + 1, // 1-12
+          year: firstDate.getFullYear(),
+          date: firstResult.data[0].date,
+        },
+        last_transaction: {
+          month: lastDate.getMonth() + 1, // 1-12
+          year: lastDate.getFullYear(),
+          date: lastResult.data![0].date,
+        },
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error('Error in getTransactionDateRange:', error);
+      res.status(500).json({ error: 'Erro ao buscar período de transações' });
+    }
+  }
+
+  /**
+   * GET /api/dashboard/
    * GET /api/dashboard/setup-status
    * Retorna status de configuração inicial do sistema (onboarding)
    * Verifica se existe pelo menos 1 registro em cada feature

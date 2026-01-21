@@ -13,6 +13,7 @@ router.get('/', (req, res) => transactionsController.getAll(req, res));
 router.get('/:id', (req, res) => transactionsController.getById(req, res));
 router.post('/', requireActiveSubscription, (req, res) => transactionsController.create(req, res));
 router.post('/bulk', requireActiveSubscription, (req, res) => transactionsController.createBulk(req, res));
+router.post('/import', requireActiveSubscription, (req, res) => transactionsController.import(req, res));
 router.put('/:id', requireActiveSubscription, (req, res) => transactionsController.update(req, res));
 router.delete('/:id', (req, res) => transactionsController.delete(req, res));
 

@@ -8,7 +8,9 @@ import categoriesRoutes from './routes/categories.routes';
 import creditCardsRoutes from './routes/credit-cards.routes';
 import transactionsRoutes from './routes/transactions.routes';
 import subscriptionsRoutes from './routes/subscriptions.routes';
+import notificationsRoutes from './routes/notifications.routes';
 import { errorHandler, notFound } from './middleware/errorHandler';
+import { startNotificationsCron } from './jobs/notifications.job';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -45,6 +47,7 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/credit-cards', creditCardsRoutes);
 app.use('/api/transactions', transactionsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notifications', notificationsRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
 
 // Error handlers
@@ -61,6 +64,10 @@ app.listen(PORT, () => {
   console.log(`💰 Transactions endpoints available at /api/transactions`);
   console.log(`📊 Dashboard endpoints available at /api/dashboard`);
   console.log(`💎 Subscriptions endpoints available at /api/subscriptions`);
+  console.log(`🔔 Notifications endpoints available at /api/notifications`);
+  
+  // Iniciar cron job de notificações
+  startNotificationsCron();
 });
 
 export default app;

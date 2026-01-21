@@ -31,3 +31,4 @@ Thumbs.db
 
 # Prisma
 prisma/migrations/
+*.bat

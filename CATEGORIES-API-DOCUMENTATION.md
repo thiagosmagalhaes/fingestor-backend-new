@@ -29,6 +29,7 @@ Lista todas as categorias de uma empresa específica, ordenadas por tipo e nome.
     "name": "Salário",
     "type": "income",
     "color": "#10B981",
+    "nature": null,
     "created_at": "2026-01-20T10:00:00Z"
   },
   {
@@ -37,6 +38,7 @@ Lista todas as categorias de uma empresa específica, ordenadas por tipo e nome.
     "name": "Alimentação",
     "type": "expense",
     "color": "#EF4444",
+    "nature": "EXPENSE",
     "created_at": "2026-01-20T10:00:00Z"
   }
 ]
@@ -53,26 +55,6 @@ Lista todas as categorias de uma empresa específica, ordenadas por tipo e nome.
 ```bash
 curl -X GET "http://localhost:3000/api/categories?companyId=123e4567-e89b-12d3-a456-426614174000" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
-
-#### Exemplo React (com Axios):
-```typescript
-const fetchCategories = async (companyId: string) => {
-  const token = localStorage.getItem('access_token');
-  
-  try {
-    const response = await axios.get(`/api/categories?companyId=${companyId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    console.log('Categorias:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('Erro ao buscar categorias:', error);
-  }
-};
 ```
 
 ---
@@ -98,6 +80,7 @@ Retorna os detalhes de uma categoria específica.
   "name": "Salário",
   "type": "income",
   "color": "#10B981",
+  "nature": null,
   "created_at": "2026-01-20T10:00:00Z"
 }
 ```
@@ -135,7 +118,8 @@ Cria uma nova categoria para uma empresa.
   "companyId": "123e4567-e89b-12d3-a456-426614174000",
   "name": "Investimentos",
   "type": "expense",
-  "color": "#8B5CF6"
+  "color": "#8B5CF6",
+  "nature": "COST"
 }
 ```
 
@@ -144,11 +128,15 @@ Cria uma nova categoria para uma empresa.
 - `name` (string, obrigatório) - Nome da categoria (mínimo 2 caracteres)
 - `type` (string, obrigatório) - Tipo: "income" ou "expense"
 - `color` (string, obrigatório) - Cor em hexadecimal (#RRGGBB)
+- `nature` (string, condicional) - Natureza: "COST" ou "EXPENSE" (obrigatório apenas para type="expense")
 
 #### Validações:
 - ✅ Nome deve ter pelo menos 2 caracteres
 - ✅ Tipo deve ser "income" ou "expense"
 - ✅ Cor deve estar no formato #RRGGBB
+- ✅ Nature deve ser "COST" ou "EXPENSE" (se fornecido)
+- ✅ Nature é obrigatória para categorias de despesa (type="expense")
+- ✅ Nature não pode ser definida para categorias de receita (type="income")
 - ✅ Não pode existir categoria com mesmo nome e tipo na empresa
 - ✅ A empresa deve existir e pertencer ao usuário
 
@@ -162,6 +150,7 @@ Cria uma nova categoria para uma empresa.
   "name": "Investimentos",
   "type": "expense",
   "color": "#8B5CF6",
+  "nature": "COST",
   "created_at": "2026-01-20T12:30:00Z"
 }
 ```
@@ -170,6 +159,18 @@ Cria uma nova categoria para uma empresa.
 ```json
 {
   "error": "Nome da categoria deve ter pelo menos 2 caracteres"
+}
+```
+
+```json
+{
+  "error": "Nature é obrigatória para categorias de despesa (expense)"
+}
+```
+
+```json
+{
+  "error": "Nature só pode ser definida para categorias de despesa (expense)"
 }
 ```
 
@@ -196,38 +197,9 @@ curl -X POST "http://localhost:3000/api/categories" \
     "companyId": "123e4567-e89b-12d3-a456-426614174000",
     "name": "Investimentos",
     "type": "expense",
-    "color": "#8B5CF6"
+    "color": "#8B5CF6",
+    "nature": "COST"
   }'
-```
-
-#### Exemplo React (com Axios):
-```typescript
-interface CreateCategoryData {
-  companyId: string;
-  name: string;
-  type: 'income' | 'expense';
-  color: string;
-}
-
-const createCategory = async (data: CreateCategoryData) => {
-  const token = localStorage.getItem('access_token');
-  
-  try {
-    const response = await axios.post('/api/categories', data, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    console.log('Categoria criada:', response.data);
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error('Erro:', error.response?.data.error);
-    }
-  }
-};
 ```
 
 ---
@@ -256,11 +228,16 @@ Atualiza uma categoria existente. Todos os campos são opcionais.
 - `name` (string) - Nome da categoria (mínimo 2 caracteres)
 - `type` (string) - Tipo: "income" ou "expense"
 - `color` (string) - Cor em hexadecimal (#RRGGBB)
+- `nature` (string) - Natureza: "COST" ou "EXPENSE" (apenas para type="expense")
 
 #### Validações:
 - ✅ Nome deve ter pelo menos 2 caracteres (se fornecido)
 - ✅ Tipo deve ser "income" ou "expense" (se fornecido)
 - ✅ Cor deve estar no formato #RRGGBB (se fornecido)
+- ✅ Nature deve ser "COST" ou "EXPENSE" (se fornecido)
+- ✅ Nature só pode ser definida para categorias de despesa
+- ✅ Ao mudar para expense, nature é obrigatória
+- ✅ Ao mudar para income, nature será automaticamente removida
 - ✅ Não pode criar duplicata (mesmo nome e tipo na empresa)
 - ✅ Pelo menos um campo deve ser fornecido
 
@@ -274,6 +251,7 @@ Atualiza uma categoria existente. Todos os campos são opcionais.
   "name": "Investimentos Financeiros",
   "type": "income",
   "color": "#3B82F6",
+  "nature": null,
   "created_at": "2026-01-20T10:00:00Z"
 }
 ```
@@ -282,6 +260,18 @@ Atualiza uma categoria existente. Todos os campos são opcionais.
 ```json
 {
   "error": "Nenhum campo para atualizar"
+}
+```
+
+```json
+{
+  "error": "Nature só pode ser definida para categorias de despesa (expense)"
+}
+```
+
+```json
+{
+  "error": "Nature é obrigatória ao mudar para categoria de despesa (expense)"
 }
 ```
 
@@ -310,43 +300,12 @@ curl -X PUT "http://localhost:3000/api/categories/550e8400-e29b-41d4-a716-446655
   }'
 ```
 
-#### Exemplo React (com Axios):
-```typescript
-const updateCategory = async (
-  id: string,
-  companyId: string,
-  updates: Partial<CreateCategoryData>
-) => {
-  const token = localStorage.getItem('access_token');
-  
-  try {
-    const response = await axios.put(
-      `/api/categories/${id}?companyId=${companyId}`,
-      updates,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    console.log('Categoria atualizada:', response.data);
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error('Erro:', error.response?.data.error);
-    }
-  }
-};
-```
-
 ---
 
 ### 5. Deletar Categoria
 **DELETE** `/api/categories/:id?companyId={companyId}`
 
-Deleta uma categoria. ⚠️ **ATENÇÃO**: Por causa do CASCADE, todas as transações associadas também serão deletadas!
+Deleta uma categoria.
 
 #### Path Parameters:
 - `id` (string, obrigatório) - ID da categoria
@@ -370,73 +329,89 @@ Deleta uma categoria. ⚠️ **ATENÇÃO**: Por causa do CASCADE, todas as trans
 }
 ```
 
+**409 Conflict**
+```json
+{
+  "error": "Não é possível deletar esta categoria pois existem transações vinculadas a ela. Remova ou reatribua as transações antes de deletar a categoria."
+}
+```
+
 #### Exemplo cURL:
 ```bash
 curl -X DELETE "http://localhost:3000/api/categories/550e8400-e29b-41d4-a716-446655440000?companyId=123e4567-e89b-12d3-a456-426614174000" \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
-#### Exemplo React (com Axios):
-```typescript
-const deleteCategory = async (id: string, companyId: string) => {
-  const token = localStorage.getItem('access_token');
-  
-  // Confirmar antes de deletar
-  if (!window.confirm('Tem certeza? Todas as transações desta categoria serão deletadas!')) {
-    return;
-  }
-  
-  try {
-    const response = await axios.delete(
-      `/api/categories/${id}?companyId=${companyId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      }
-    );
-    
-    console.log(response.data.message);
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error('Erro:', error.response?.data.error);
-    }
-  }
-};
+---
+
+## Natureza de Despesas (Nature)
+
+A coluna `nature` classifica despesas em dois tipos:
+
+### COST (Custos)
+Gastos diretamente relacionados à produção ou aquisição de bens/serviços vendidos:
+- Matéria-prima
+- Mão de obra direta
+- Custos de produção
+- Mercadorias para revenda
+
+### EXPENSE (Despesas)
+Gastos necessários para manter a operação do negócio:
+- Aluguel
+- Salários administrativos
+- Marketing e publicidade
+- Contas de água, luz, internet
+
+**Exemplos de CURLs:**
+
+```bash
+# Criar categoria de CUSTO
+curl -X POST "http://localhost:3000/api/categories" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "companyId": "123e4567-e89b-12d3-a456-426614174000",
+    "name": "Matéria Prima",
+    "type": "expense",
+    "color": "#DC2626",
+    "nature": "COST"
+  }'
+
+# Criar categoria de DESPESA
+curl -X POST "http://localhost:3000/api/categories" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "companyId": "123e4567-e89b-12d3-a456-426614174000",
+    "name": "Marketing",
+    "type": "expense",
+    "color": "#8B5CF6",
+    "nature": "EXPENSE"
+  }'
+
+# Criar categoria de RECEITA (nature não é necessária)
+curl -X POST "http://localhost:3000/api/categories" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "companyId": "123e4567-e89b-12d3-a456-426614174000",
+    "name": "Vendas",
+    "type": "income",
+    "color": "#10B981"
+  }'
+
+# Atualizar apenas a nature de uma categoria
+curl -X PUT "http://localhost:3000/api/categories/550e8400-e29b-41d4-a716-446655440000?companyId=123e4567-e89b-12d3-a456-426614174000" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nature": "COST"
+  }'
 ```
 
 ---
 
-## Tipos TypeScript
-
-```typescript
-interface Category {
-  id: string;
-  company_id: string;
-  name: string;
-  type: 'income' | 'expense';
-  color: string; // Formato: #RRGGBB
-  created_at: string;
-}
-
-interface CreateCategoryData {
-  companyId: string;
-  name: string;
-  type: 'income' | 'expense';
-  color: string;
-}
-
-interface UpdateCategoryData {
-  name?: string;
-  type?: 'income' | 'expense';
-  color?: string;
-}
-```
-
----
-
-## Exemplos de Cores por Tipo
+## Exemplos de Cores Sugeridas
 
 ### Receitas (Income):
 - 🟢 Verde: `#10B981` (Salário, Rendimentos)
@@ -447,129 +422,6 @@ interface UpdateCategoryData {
 - 🔴 Vermelho: `#EF4444` (Alimentação, Moradia)
 - 🟣 Roxo: `#8B5CF6` (Lazer, Entretenimento)
 - 🟠 Laranja: `#F97316` (Transporte, Viagens)
-
----
-
-## Exemplo de Hook React Completo
-
-```typescript
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-interface Category {
-  id: string;
-  company_id: string;
-  name: string;
-  type: 'income' | 'expense';
-  color: string;
-  created_at: string;
-}
-
-export const useCategories = (companyId: string) => {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchCategories = async () => {
-    const token = localStorage.getItem('access_token');
-    setLoading(true);
-    
-    try {
-      const response = await axios.get(`/api/categories?companyId=${companyId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      setCategories(response.data);
-      setError(null);
-    } catch (err) {
-      setError('Erro ao carregar categorias');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const createCategory = async (data: Omit<Category, 'id' | 'created_at' | 'company_id'>) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      const response = await axios.post('/api/categories', 
-        { ...data, companyId },
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setCategories([...categories, response.data]);
-      return response.data;
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  const updateCategory = async (id: string, updates: Partial<Category>) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      const response = await axios.put(
-        `/api/categories/${id}?companyId=${companyId}`,
-        updates,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setCategories(categories.map(cat => 
-        cat.id === id ? response.data : cat
-      ));
-      return response.data;
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  const deleteCategory = async (id: string) => {
-    const token = localStorage.getItem('access_token');
-    
-    try {
-      await axios.delete(
-        `/api/categories/${id}?companyId=${companyId}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      
-      setCategories(categories.filter(cat => cat.id !== id));
-    } catch (err) {
-      console.error(err);
-      throw err;
-    }
-  };
-
-  useEffect(() => {
-    if (companyId) {
-      fetchCategories();
-    }
-  }, [companyId]);
-
-  return {
-    categories,
-    loading,
-    error,
-    refetch: fetchCategories,
-    createCategory,
-    updateCategory,
-    deleteCategory
-  };
-};
-```
-
----
-
-## Fluxo de Uso Recomendado
-
-1. **Ao criar empresa**: Categorias padrão são criadas automaticamente
-2. **Listar categorias**: Use para popular dropdowns em formulários de transações
-3. **Filtrar por tipo**: Separe income/expense no frontend para melhor UX
-4. **Criar custom**: Permita usuário criar categorias personalizadas
-5. **Editar raramente**: Categorias geralmente são configuradas uma vez
-6. **Deletar com cuidado**: Avisar sobre CASCADE de transações
 
 ---
 
