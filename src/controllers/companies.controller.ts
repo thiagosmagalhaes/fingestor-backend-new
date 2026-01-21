@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import supabase from '../config/database';
+import { getSupabaseClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 
 interface CreateCompanyRequest {
@@ -20,7 +20,7 @@ export class CompaniesController {
   async getAll(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const supabaseClient = supabase;
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
       const { data: companies, error } = await supabaseClient
         .from('companies')
@@ -52,7 +52,7 @@ export class CompaniesController {
         return res.status(400).json({ error: 'ID da empresa é obrigatório' });
       }
 
-      const supabaseClient = supabase;
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
       const { data: company, error } = await supabaseClient
         .from('companies')
@@ -101,7 +101,7 @@ export class CompaniesController {
         }
       }
 
-      const supabaseClient = supabase;
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
       // Obter user_id do token
       const { data: { user } } = await supabaseClient.auth.getUser();
@@ -230,7 +230,7 @@ export class CompaniesController {
         }
       }
 
-      const supabaseClient = supabase;
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
       // Preparar dados para atualização
       const updateData: any = {
@@ -280,7 +280,7 @@ export class CompaniesController {
         return res.status(400).json({ error: 'ID da empresa é obrigatório' });
       }
 
-      const supabaseClient = supabase;
+      const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
       const { error } = await supabaseClient
         .from('companies')
