@@ -11,6 +11,7 @@ interface RegisterRequest {
   password: string;
   confirmPassword: string;
   fullName: string;
+  phone: string;
 }
 
 export class AuthController {
@@ -90,10 +91,10 @@ export class AuthController {
    */
   async register(req: Request, res: Response): Promise<Response | void> {
     try {
-      const { email, password, confirmPassword, fullName } = req.body as RegisterRequest;
+      const { email, password, confirmPassword, fullName, phone } = req.body as RegisterRequest;
 
       // Validação de campos obrigatórios
-      if (!email || !password || !confirmPassword || !fullName) {
+      if (!email || !password || !confirmPassword || !fullName || !phone) {
         return res.status(400).json({ 
           error: 'Todos os campos são obrigatórios' 
         });
@@ -129,12 +130,14 @@ export class AuthController {
       }
 
       // Registrar usuário no Supabase
+      // adiciona o phone no supabase somente numeros
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             full_name: fullName.trim(),
+            phone: phone.replace(/\D/g, ''),
           },
         },
       });

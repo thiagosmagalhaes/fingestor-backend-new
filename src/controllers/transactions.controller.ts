@@ -663,29 +663,51 @@ export class TransactionsController {
           }
 
           // Normalizar CNPJ (remover pontuação)
-          const cnpj = tx.company_cnpj.replace(/[^\d]/g, '');
 
           // Buscar empresa no cache ou banco
-          let company = companiesCache.get(cnpj);
+          let company = companiesCache.get(tx.company_cnpj);
           if (!company) {
             const { data: companyData, error: companyError } = await supabaseClient
               .from('companies')
               .select('id, name, cnpj')
               .eq('user_id', userId)
-              .eq('cnpj', cnpj)
+              .eq('cnpj', tx.company_cnpj)
               .single();
 
             if (companyError || !companyData) {
-              errors.push({
-                line: lineNumber,
-                description: tx.description,
-                error: `Empresa com CNPJ ${tx.company_cnpj} não encontrada`,
-              });
-              continue;
+              // Criar empresa se não existir
+              const companyName = tx.company_name || `Empresa ${tx.company_cnpj}`;
+              
+              // Determinar o tipo da conta baseado no CNPJ/CPF
+              const cnpjClean = tx.company_cnpj.replace(/[^\d]/g, '');
+              const accountType = cnpjClean.length === 11 ? 'pessoal' : 'empresa';
+              
+              const { data: newCompany, error: createCompanyError } = await supabaseClient
+                .from('companies')
+                .insert({
+                  user_id: userId,
+                  name: companyName,
+                  cnpj: tx.company_cnpj,
+                  type: accountType,
+                })
+                .select('id, name, cnpj')
+                .single();
+
+              if (createCompanyError || !newCompany) {
+                errors.push({
+                  line: lineNumber,
+                  description: tx.description,
+                  error: `Não foi possível criar empresa com CNPJ ${tx.company_cnpj}`,
+                });
+                continue;
+              }
+
+              company = newCompany;
+            } else {
+              company = companyData;
             }
 
-            company = companyData;
-            companiesCache.set(cnpj, company);
+            companiesCache.set(tx.company_cnpj, company);
           }
 
           // Validar tipo
@@ -808,15 +830,33 @@ export class TransactionsController {
                 .single();
 
               if (cardError || !cardData) {
-                errors.push({
-                  line: lineNumber,
-                  description: tx.description,
-                  error: `Cartão de crédito "${tx.credit_card_name}" não encontrado para a empresa ${company.name}`,
-                });
-                continue;
+                // Criar cartão de crédito se não existir
+                const { data: newCard, error: createCardError } = await supabaseClient
+                  .from('credit_cards')
+                  .insert({
+                    company_id: company.id,
+                    name: tx.credit_card_name.trim(),
+                    closing_day: tx.credit_card_closing_day || 10,
+                    due_day: tx.credit_card_due_day || 15,
+                    credit_limit: tx.credit_card_limit || null,
+                  })
+                  .select('id, name')
+                  .single();
+
+                if (createCardError || !newCard) {
+                  errors.push({
+                    line: lineNumber,
+                    description: tx.description,
+                    error: `Não foi possível criar cartão de crédito "${tx.credit_card_name}" para a empresa ${company.name}`,
+                  });
+                  continue;
+                }
+
+                creditCard = newCard;
+              } else {
+                creditCard = cardData;
               }
 
-              creditCard = cardData;
               creditCardsCache.set(cardKey, creditCard);
             }
 

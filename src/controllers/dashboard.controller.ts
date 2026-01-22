@@ -324,6 +324,7 @@ export class DashboardController {
         .order('date', { ascending: false })
         .gte('date', startOfMonth)
         .lte('date', endOfMonth)
+        .neq('is_credit_card', true)
         .limit(limitCount);
 
       if (error) {
@@ -358,6 +359,7 @@ export class DashboardController {
           paidDate: t.paid_at || undefined,
           categoryName,
           categoryColor,
+          isCreditCard: !!t.credit_cards,
         };
       });
 
@@ -857,6 +859,7 @@ export class DashboardController {
   async getSetupStatus(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
+      const { companyId } = req.params;
 
       // Usar cliente autenticado para respeitar RLS
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
@@ -865,6 +868,7 @@ export class DashboardController {
       const { data: companies, error: companyError } = await supabaseClient
         .from('companies')
         .select('id')
+        .eq('id', companyId)
         .limit(1);
 
       if (companyError) {
@@ -885,8 +889,6 @@ export class DashboardController {
         return res.json(setupStatus);
       }
 
-      // Usar a primeira company para verificar as outras features
-      const companyId = companies![0].id;
 
       // Executar todas as verificações em paralelo para otimizar performance
       const [categoriesCheck, creditCardsCheck, transactionsCheck] = await Promise.all([

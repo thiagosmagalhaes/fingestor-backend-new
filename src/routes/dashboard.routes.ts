@@ -11,7 +11,7 @@ router.use(authMiddleware);
 router.get('/all', (req, res) => dashboardController.getAllDashboardData(req, res));
 
 // Rota de status de setup inicial (onboarding)
-router.get('/setup-status', (req, res) => dashboardController.getSetupStatus(req, res));
+router.get('/setup-status/:companyId', (req, res) => dashboardController.getSetupStatus(req, res));
 
 // Rota do DRE (Demonstrativo de Resultados do Exercício)
 router.get('/dre', (req, res) => dashboardController.getDRE(req, res));

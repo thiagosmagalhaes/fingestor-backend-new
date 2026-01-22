@@ -437,7 +437,7 @@ export class CreditCardsController {
       }, 0);
 
       // Verificar se a fatura foi paga (invoice_paid_at preenchido em qualquer transação)
-      const paidTransaction = (transactions || []).find(tx => tx.invoice_paid_at);
+      const paidTransaction = (transactions || []).find(tx => tx.status === 'paid');
       const isPaid = !!paidTransaction;
       const paidAt = paidTransaction?.invoice_paid_at || null;
 

@@ -5,11 +5,13 @@ import { AuthRequest } from '../middleware/auth';
 interface CreateCompanyRequest {
   name: string;
   cnpj?: string;
+  accountType?: 'empresa' | 'pessoal';
 }
 
 interface UpdateCompanyRequest {
   name?: string;
   cnpj?: string;
+  accountType?: 'empresa' | 'pessoal';
 }
 
 export class CompaniesController {
@@ -82,7 +84,7 @@ export class CompaniesController {
   async create(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { name, cnpj } = req.body as CreateCompanyRequest;
+      const { name, cnpj, accountType } = req.body as CreateCompanyRequest;
 
       // Validações
       if (!name || name.trim().length === 0) {
@@ -110,12 +112,23 @@ export class CompaniesController {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
 
+      // Determinar o tipo da conta
+      let type: 'empresa' | 'pessoal' = 'empresa';
+      if (accountType) {
+        type = accountType;
+      } else if (cnpj) {
+        // Se não foi fornecido accountType, determina pelo CNPJ/CPF
+        const cnpjClean = cnpj.replace(/[^\d]/g, '');
+        type = cnpjClean.length === 11 ? 'pessoal' : 'empresa';
+      }
+
       const { data: company, error } = await supabaseClient
         .from('companies')
         .insert({
           user_id: user.id,
           name: name.trim(),
           cnpj: cnpj || null,
+          type: type,
         })
         .select()
         .single();
@@ -207,7 +220,7 @@ export class CompaniesController {
     try {
       const authReq = req as AuthRequest;
       const { id } = req.params;
-      const { name, cnpj } = req.body as UpdateCompanyRequest;
+      const { name, cnpj, accountType } = req.body as UpdateCompanyRequest;
 
       if (!id) {
         return res.status(400).json({ error: 'ID da empresa é obrigatório' });
@@ -243,6 +256,10 @@ export class CompaniesController {
 
       if (cnpj !== undefined) {
         updateData.cnpj = cnpj || null;
+      }
+
+      if (accountType !== undefined) {
+        updateData.type = accountType;
       }
 
       const { data: company, error } = await supabaseClient
