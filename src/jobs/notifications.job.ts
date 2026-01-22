@@ -43,7 +43,7 @@ export async function checkOverdueTransactions() {
         const { data: existingNotif } = await supabaseAdmin
           .from('notifications')
           .select('id')
-          .eq('user_id', (transaction.companies as any).user_id)
+          .eq('user_id', transaction.companies.user_id)
           .eq('company_id', transaction.company_id)
           .eq('type', 'warning')
           .like('message', `%${transaction.id}%`)
@@ -53,7 +53,7 @@ export async function checkOverdueTransactions() {
 
         if (!existingNotif) {
           await supabaseAdmin.from('notifications').insert({
-            user_id: (transaction.companies as any).user_id,
+            user_id: transaction.companies.user_id,
             company_id: transaction.company_id,
             title: 'Despesa vence amanhã',
             message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence amanhã - ID: ${transaction.id}`,
@@ -82,7 +82,7 @@ export async function checkOverdueTransactions() {
         const { data: existingNotif } = await supabaseAdmin
           .from('notifications')
           .select('id')
-          .eq('user_id', (transaction.companies as any).user_id)
+          .eq('user_id', transaction.companies.user_id)
           .eq('company_id', transaction.company_id)
           .eq('type', 'warning')
           .like('message', `%${transaction.id}%`)
@@ -92,7 +92,7 @@ export async function checkOverdueTransactions() {
 
         if (!existingNotif) {
           await supabaseAdmin.from('notifications').insert({
-            user_id: (transaction.companies as any).user_id,
+            user_id: transaction.companies.user_id,
             company_id: transaction.company_id,
             title: 'Despesa vence em 2 dias',
             message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence em 2 dias - ID: ${transaction.id}`,
@@ -121,7 +121,7 @@ export async function checkOverdueTransactions() {
         const { data: existingNotif } = await supabaseAdmin
           .from('notifications')
           .select('id')
-          .eq('user_id', (transaction.companies as any).user_id)
+          .eq('user_id', transaction.companies.user_id)
           .eq('company_id', transaction.company_id)
           .eq('type', 'warning')
           .like('message', `%${transaction.id}%`)
@@ -131,7 +131,7 @@ export async function checkOverdueTransactions() {
 
         if (!existingNotif) {
           await supabaseAdmin.from('notifications').insert({
-            user_id: (transaction.companies as any).user_id,
+            user_id: transaction.companies.user_id,
             company_id: transaction.company_id,
             title: 'Despesa vence em 3 dias',
             message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence em 3 dias - ID: ${transaction.id}`,
@@ -161,7 +161,7 @@ export async function checkOverdueTransactions() {
         const { data: existingNotif } = await supabaseAdmin
           .from('notifications')
           .select('id')
-          .eq('user_id', (transaction.companies as any).user_id)
+          .eq('user_id', transaction.companies.user_id)
           .eq('company_id', transaction.company_id)
           .eq('type', 'expense_due')
           .like('message', `%${transaction.id}%`)
@@ -170,7 +170,7 @@ export async function checkOverdueTransactions() {
 
         if (!existingNotif) {
           await supabaseAdmin.from('notifications').insert({
-            user_id: (transaction.companies as any).user_id,
+            user_id: transaction.companies.user_id,
             company_id: transaction.company_id,
             title: 'Despesa vence hoje',
             message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence hoje - ID: ${transaction.id}`,
@@ -196,15 +196,20 @@ export async function checkOverdueTransactions() {
 
       for (const transaction of overdue) {
         // Verificar se já existe notificação de vencido para esta transação hoje
-        const { data: existingNotif } = await supabaseAdmin
+        const { data: existingNotif, error: existingNotifError } = await supabaseAdmin
           .from('notifications')
           .select('id')
-          .eq('user_id', (transaction.companies as any).user_id)
+          .eq('user_id', transaction.companies.user_id)
           .eq('company_id', transaction.company_id)
           .eq('type', 'expense_overdue')
           .like('message', `%${transaction.id}%`)
           .gte('created_at', today.toISOString())
           .single();
+
+        if(existingNotifError) {
+          console.error('Error checking existing notification:', existingNotifError);
+          //continue;
+        }
 
         if (!existingNotif) {
           const daysOverdue = Math.floor(
@@ -212,7 +217,7 @@ export async function checkOverdueTransactions() {
           );
 
           await supabaseAdmin.from('notifications').insert({
-            user_id: (transaction.companies as any).user_id,
+            user_id: transaction.companies.user_id,
             company_id: transaction.company_id,
             title: 'Despesa vencida',
             message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) está vencida há ${daysOverdue} dia(s)`,

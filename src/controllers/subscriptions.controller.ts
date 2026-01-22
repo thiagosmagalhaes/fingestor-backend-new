@@ -537,7 +537,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     
     console.log(`current_period_end calculado baseado no plano ${planType}: ${endDate.toISOString()}`);
   }
-  
+
   const currentPeriodEnd = endDate.toISOString();
 
   // Salvar no banco de dados
