@@ -34,6 +34,7 @@ interface UpdateTransactionRequest {
   totalInstallments?: number;
   creditCardId?: string;
   notes?: string;
+  isCreditCard?: boolean;
 }
 
 export class TransactionsController {
@@ -370,6 +371,7 @@ export class TransactionsController {
         totalInstallments,
         creditCardId,
         notes,
+        isCreditCard,
       } = req.body as UpdateTransactionRequest;
       const { companyId } = req.query;
 
@@ -460,6 +462,7 @@ export class TransactionsController {
       if (totalInstallments !== undefined) updateData.total_installments = totalInstallments;
       if (creditCardId !== undefined) updateData.credit_card_id = creditCardId;
       if (notes !== undefined) updateData.notes = notes?.trim() || null;
+      updateData.is_credit_card = isCreditCard;
 
       // Se não há nada para atualizar além do updated_at
       if (Object.keys(updateData).length === 1) {
