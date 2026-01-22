@@ -69,7 +69,7 @@ export const requireActiveSubscription = async (
     // Trial expirado e sem assinatura - bloquear acesso
     return res.status(402).json({
       error: 'Payment Required',
-      message: 'Assine o Fingestor Plus para continuar usando o sistema',
+      message: 'Seu período de trial expirou. Por favor, assine um plano para realizar esta ação.',
       requires_subscription: true,
       trial_expired: true,
       trial_days_elapsed: daysSinceCreation,
