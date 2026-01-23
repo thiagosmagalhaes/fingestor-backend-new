@@ -396,7 +396,7 @@ export class CreditCardsController {
 
       // Período de compras: dia seguinte ao fechamento anterior até fechamento atual
       const periodStart = new Date(previousClosingDate);
-      periodStart.setDate(periodStart.getDate() + 1);
+      periodStart.setDate(periodStart.getDate());
       
       // Data de vencimento
       let dueDate = new Date(year, month, creditCard.due_day);
@@ -431,9 +431,11 @@ export class CreditCardsController {
         throw txError;
       }
 
-      // Calcular total
+      // Calcular total (despesas positivas, receitas negativas)
       const totalAmount = (transactions || []).reduce((sum, tx) => {
-        return sum + Number(tx.amount);
+        const amount = Number(tx.amount);
+        // Despesas (compras) somam, receitas (estornos) subtraem
+        return tx.type === 'expense' ? sum + amount : sum - amount;
       }, 0);
 
       // Verificar se a fatura foi paga (invoice_paid_at preenchido em qualquer transação)
@@ -445,7 +447,7 @@ export class CreditCardsController {
       const mappedTransactions = (transactions || []).map((t: any) => ({
         id: t.id,
         description: t.description,
-        amount: Number(t.amount),
+        amount: t.type === 'expense' ? -Number(t.amount) : Number(t.amount),
         type: t.type as 'income' | 'expense',
         categoryId: t.category_id || '',
         companyId: t.company_id,

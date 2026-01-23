@@ -17,6 +17,7 @@ interface CreateTransactionRequest {
   isInstallment?: boolean;
   installmentNumber?: number;
   totalInstallments?: number;
+  isCreditCard?: boolean;
   creditCardId?: string;
   notes?: string;
 }
@@ -217,6 +218,7 @@ export class TransactionsController {
         isInstallment,
         installmentNumber,
         totalInstallments,
+        isCreditCard,
         creditCardId,
         notes,
       } = req.body as CreateTransactionRequest;
@@ -320,6 +322,7 @@ export class TransactionsController {
         installment_number: installmentNumber || null,
         total_installments: totalInstallments || null,
         credit_card_id: creditCardId || null,
+        is_credit_card: !!isCreditCard,
         notes: notes?.trim() || null,
       };
 
@@ -675,34 +678,12 @@ export class TransactionsController {
               .single();
 
             if (companyError || !companyData) {
-              // Criar empresa se não existir
-              const companyName = tx.company_name || `Empresa ${tx.company_cnpj}`;
-              
-              // Determinar o tipo da conta baseado no CNPJ/CPF
-              const cnpjClean = tx.company_cnpj.replace(/[^\d]/g, '');
-              const accountType = cnpjClean.length === 11 ? 'pessoal' : 'empresa';
-              
-              const { data: newCompany, error: createCompanyError } = await supabaseClient
-                .from('companies')
-                .insert({
-                  user_id: userId,
-                  name: companyName,
-                  cnpj: tx.company_cnpj,
-                  type: accountType,
-                })
-                .select('id, name, cnpj')
-                .single();
-
-              if (createCompanyError || !newCompany) {
-                errors.push({
-                  line: lineNumber,
-                  description: tx.description,
-                  error: `Não foi possível criar empresa com CNPJ ${tx.company_cnpj}`,
-                });
-                continue;
-              }
-
-              company = newCompany;
+              errors.push({
+                line: lineNumber,
+                description: tx.description,
+                error: `Empresa com CNPJ ${tx.company_cnpj} não encontrada.`,
+              });
+              continue;
             } else {
               company = companyData;
             }
