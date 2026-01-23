@@ -1,5 +1,15 @@
 import { supabaseAdmin } from '../config/database';
 
+interface NotificationToCreate {
+  user_id: string;
+  company_id: string;
+  title: string;
+  message: string;
+  type: string;
+  link_to: string;
+  transaction_id: string;
+}
+
 /**
  * Job para verificar transações vencidas e criar notificações
  * Deve ser executado periodicamente (ex: a cada hora)
@@ -8,10 +18,8 @@ export async function checkOverdueTransactions() {
   try {
     console.log('[CRON] Verificando transações vencidas...');
 
-    // Usar service role para acessar todas as transações (bypass RLS)
-
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalizar para início do dia
+    today.setHours(0, 0, 0, 0);
 
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -25,207 +33,127 @@ export async function checkOverdueTransactions() {
     const in4Days = new Date(today);
     in4Days.setDate(in4Days.getDate() + 4);
 
-    // Buscar transações que vencem amanhã
-    const { data: dueTomorrow, error: dueTomorrowError } = await supabaseAdmin
+    // Array para acumular todas as notificações a serem criadas
+    const notificationsToCreate: NotificationToCreate[] = [];
+
+    // Buscar todas as transações pendentes de uma vez
+    const { data: allTransactions, error: allTxError } = await supabaseAdmin
       .from('transactions')
       .select('*, companies!inner(user_id)')
       .eq('status', 'pending')
       .eq('is_credit_card', false)
-      .gte('date', tomorrow.toISOString().split('T')[0])
-      .lt('date', in2Days.toISOString().split('T')[0]);
-
-    if (dueTomorrowError) {
-      console.error('Error fetching due tomorrow transactions:', dueTomorrowError);
-    } else if (dueTomorrow && dueTomorrow.length > 0) {
-      console.log(`[CRON] Encontradas ${dueTomorrow.length} transações que vencem amanhã`);
-
-      for (const transaction of dueTomorrow) {
-        const { data: existingNotif } = await supabaseAdmin
-          .from('notifications')
-          .select('id')
-          .eq('user_id', transaction.companies.user_id)
-          .eq('company_id', transaction.company_id)
-          .eq('type', 'warning')
-          .like('message', `%${transaction.id}%`)
-          .like('message', '%amanhã%')
-          .gte('created_at', today.toISOString())
-          .single();
-
-        if (!existingNotif) {
-          await supabaseAdmin.from('notifications').insert({
-            user_id: transaction.companies.user_id,
-            company_id: transaction.company_id,
-            title: 'Despesa vence amanhã',
-            message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence amanhã - ID: ${transaction.id}`,
-            type: 'warning',
-            link_to: `/transactions/${transaction.id}`,
-          });
-        }
-      }
-    }
-
-    // Buscar transações que vencem em 2 dias
-    const { data: dueIn2Days, error: dueIn2DaysError } = await supabaseAdmin
-      .from('transactions')
-      .select('*, companies!inner(user_id)')
-      .eq('status', 'pending')
-      .eq('is_credit_card', false)
-      .gte('date', in2Days.toISOString().split('T')[0])
-      .lt('date', in3Days.toISOString().split('T')[0]);
-
-    if (dueIn2DaysError) {
-      console.error('Error fetching due in 2 days transactions:', dueIn2DaysError);
-    } else if (dueIn2Days && dueIn2Days.length > 0) {
-      console.log(`[CRON] Encontradas ${dueIn2Days.length} transações que vencem em 2 dias`);
-
-      for (const transaction of dueIn2Days) {
-        const { data: existingNotif } = await supabaseAdmin
-          .from('notifications')
-          .select('id')
-          .eq('user_id', transaction.companies.user_id)
-          .eq('company_id', transaction.company_id)
-          .eq('type', 'warning')
-          .like('message', `%${transaction.id}%`)
-          .like('message', '%em 2 dias%')
-          .gte('created_at', today.toISOString())
-          .single();
-
-        if (!existingNotif) {
-          await supabaseAdmin.from('notifications').insert({
-            user_id: transaction.companies.user_id,
-            company_id: transaction.company_id,
-            title: 'Despesa vence em 2 dias',
-            message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence em 2 dias - ID: ${transaction.id}`,
-            type: 'warning',
-            link_to: `/transactions/${transaction.id}`,
-          });
-        }
-      }
-    }
-
-    // Buscar transações que vencem em 3 dias
-    const { data: dueIn3Days, error: dueIn3DaysError } = await supabaseAdmin
-      .from('transactions')
-      .select('*, companies!inner(user_id)')
-      .eq('status', 'pending')
-      .eq('is_credit_card', false)
-      .gte('date', in3Days.toISOString().split('T')[0])
       .lt('date', in4Days.toISOString().split('T')[0]);
 
-    if (dueIn3DaysError) {
-      console.error('Error fetching due in 3 days transactions:', dueIn3DaysError);
-    } else if (dueIn3Days && dueIn3Days.length > 0) {
-      console.log(`[CRON] Encontradas ${dueIn3Days.length} transações que vencem em 3 dias`);
+    if (allTxError) {
+      console.error('Error fetching transactions:', allTxError);
+      return;
+    }
 
-      for (const transaction of dueIn3Days) {
-        const { data: existingNotif } = await supabaseAdmin
-          .from('notifications')
-          .select('id')
-          .eq('user_id', transaction.companies.user_id)
-          .eq('company_id', transaction.company_id)
-          .eq('type', 'warning')
-          .like('message', `%${transaction.id}%`)
-          .like('message', '%em 3 dias%')
-          .gte('created_at', today.toISOString())
-          .single();
+    if (!allTransactions || allTransactions.length === 0) {
+      console.log('[CRON] Nenhuma transação pendente encontrada');
+      return;
+    }
 
-        if (!existingNotif) {
-          await supabaseAdmin.from('notifications').insert({
-            user_id: transaction.companies.user_id,
-            company_id: transaction.company_id,
-            title: 'Despesa vence em 3 dias',
-            message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence em 3 dias - ID: ${transaction.id}`,
-            type: 'warning',
-            link_to: `/transactions/${transaction.id}`,
-          });
-        }
+    console.log(`[CRON] Encontradas ${allTransactions.length} transações pendentes`);
+
+    // Processar transações e determinar quais notificações criar
+    for (const transaction of allTransactions) {
+      const txDate = new Date(transaction.date + 'T00:00:00');
+      const todayStr = today.toISOString().split('T')[0];
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const in2DaysStr = in2Days.toISOString().split('T')[0];
+      const in3DaysStr = in3Days.toISOString().split('T')[0];
+
+      let notifType: string | null = null;
+      let notifTitle = '';
+      let notifMessage = '';
+
+      // Determinar tipo de notificação baseado na data
+      if (transaction.date < todayStr) {
+        // Transação vencida
+        const daysOverdue = Math.floor(
+          (today.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        notifType = 'expense_overdue';
+        notifTitle = 'Despesa vencida';
+        notifMessage = `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) está vencida há ${daysOverdue} dia(s)`;
+      } else if (transaction.date === todayStr) {
+        // Vence hoje
+        notifType = 'expense_due';
+        notifTitle = 'Despesa vence hoje';
+        notifMessage = `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence hoje - ID: ${transaction.id}`;
+      } else if (transaction.date === tomorrowStr) {
+        // Vence amanhã
+        notifType = 'warning';
+        notifTitle = 'Despesa vence amanhã';
+        notifMessage = `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence amanhã - ID: ${transaction.id}`;
+      } else if (transaction.date === in2DaysStr) {
+        // Vence em 2 dias
+        notifType = 'warning';
+        notifTitle = 'Despesa vence em 2 dias';
+        notifMessage = `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence em 2 dias - ID: ${transaction.id}`;
+      } else if (transaction.date === in3DaysStr) {
+        // Vence em 3 dias
+        notifType = 'warning';
+        notifTitle = 'Despesa vence em 3 dias';
+        notifMessage = `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence em 3 dias - ID: ${transaction.id}`;
+      }
+
+      // Se há uma notificação a ser criada, adicionar ao array
+      if (notifType) {
+        notificationsToCreate.push({
+          user_id: transaction.companies.user_id,
+          company_id: transaction.company_id,
+          title: notifTitle,
+          message: notifMessage,
+          type: notifType,
+          link_to: `/transactions/${transaction.id}`,
+          transaction_id: transaction.id,
+        });
       }
     }
 
-    // Buscar transações que vencem hoje (para notificação de "vence hoje")
-    const { data: dueToday, error: dueTodayError } = await supabaseAdmin
-      .from('transactions')
-      .select('*, companies!inner(user_id)')
-      .eq('status', 'pending')
-      .eq('is_credit_card', false)
-      .gte('date', today.toISOString().split('T')[0])
-      .lt('date', tomorrow.toISOString().split('T')[0]);
+    console.log(`[CRON] ${notificationsToCreate.length} notificações candidatas a serem criadas`);
 
-    if (dueTodayError) {
-      console.error('Error fetching due today transactions:', dueTodayError);
-    } else if (dueToday && dueToday.length > 0) {
-      console.log(`[CRON] Encontradas ${dueToday.length} transações que vencem hoje`);
+    // Buscar notificações existentes de hoje para evitar duplicatas
+    const { data: existingNotifications, error: existingError } = await supabaseAdmin
+      .from('notifications')
+      .select('id, user_id, company_id, type, message')
+      .gte('created_at', today.toISOString());
 
-      for (const transaction of dueToday) {
-        // Verificar se já existe notificação para esta transação hoje
-        const { data: existingNotif } = await supabaseAdmin
-          .from('notifications')
-          .select('id')
-          .eq('user_id', transaction.companies.user_id)
-          .eq('company_id', transaction.company_id)
-          .eq('type', 'expense_due')
-          .like('message', `%${transaction.id}%`)
-          .gte('created_at', today.toISOString())
-          .single();
-
-        if (!existingNotif) {
-          await supabaseAdmin.from('notifications').insert({
-            user_id: transaction.companies.user_id,
-            company_id: transaction.company_id,
-            title: 'Despesa vence hoje',
-            message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) vence hoje - ID: ${transaction.id}`,
-            type: 'expense_due',
-            link_to: `/transactions/${transaction.id}`,
-          });
-        }
-      }
+    if (existingError) {
+      console.error('Error fetching existing notifications:', existingError);
     }
 
-    // Buscar transações vencidas (status pending com data passada)
-    const { data: overdue, error: overdueError } = await supabaseAdmin
-      .from('transactions')
-      .select('*, companies!inner(user_id)')
-      .eq('status', 'pending')
-      .eq('is_credit_card', false)
-      .lt('date', today.toISOString().split('T')[0]);
+    // Filtrar notificações que ainda não existem e inserir em lote
+    const notificationsToInsert = notificationsToCreate.filter(notif => {
+      // Verificar se já existe notificação similar hoje
+      const exists = existingNotifications?.some(existing => 
+        existing.user_id === notif.user_id &&
+        existing.company_id === notif.company_id &&
+        existing.type === notif.type &&
+        existing.message.includes(notif.transaction_id)
+      );
+      return !exists;
+    });
 
-    if (overdueError) {
-      console.error('Error fetching overdue transactions:', overdueError);
-    } else if (overdue && overdue.length > 0) {
-      console.log(`[CRON] Encontradas ${overdue.length} transações vencidas`);
+    if (notificationsToInsert.length > 0) {
+      console.log(`[CRON] Inserindo ${notificationsToInsert.length} novas notificações`);
+      
+      // Remover transaction_id antes de inserir (não existe na tabela)
+      const notificationsData = notificationsToInsert.map(({ transaction_id, ...notif }) => notif);
+      
+      const { error: insertError } = await supabaseAdmin
+        .from('notifications')
+        .insert(notificationsData);
 
-      for (const transaction of overdue) {
-        // Verificar se já existe notificação de vencido para esta transação hoje
-        const { data: existingNotif, error: existingNotifError } = await supabaseAdmin
-          .from('notifications')
-          .select('id')
-          .eq('user_id', transaction.companies.user_id)
-          .eq('company_id', transaction.company_id)
-          .eq('type', 'expense_overdue')
-          .like('message', `%${transaction.id}%`)
-          .gte('created_at', today.toISOString())
-          .single();
-
-        if(existingNotifError) {
-          console.error('Error checking existing notification:', existingNotifError);
-          //continue;
-        }
-
-        if (!existingNotif) {
-          const daysOverdue = Math.floor(
-            (today.getTime() - new Date(transaction.date).getTime()) / (1000 * 60 * 60 * 24)
-          );
-
-          await supabaseAdmin.from('notifications').insert({
-            user_id: transaction.companies.user_id,
-            company_id: transaction.company_id,
-            title: 'Despesa vencida',
-            message: `${transaction.description} (R$ ${Number(transaction.amount).toFixed(2)}) está vencida há ${daysOverdue} dia(s)`,
-            type: 'expense_overdue',
-            link_to: `/transactions/${transaction.id}`,
-          });
-        }
+      if (insertError) {
+        console.error('Error inserting notifications:', insertError);
+      } else {
+        console.log(`[CRON] ${notificationsToInsert.length} notificações criadas com sucesso`);
       }
+    } else {
+      console.log('[CRON] Nenhuma notificação nova a ser criada');
     }
 
     console.log('[CRON] Verificação de transações vencidas concluída');
