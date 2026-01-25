@@ -9,6 +9,8 @@ import creditCardsRoutes from './routes/credit-cards.routes';
 import transactionsRoutes from './routes/transactions.routes';
 import subscriptionsRoutes from './routes/subscriptions.routes';
 import notificationsRoutes from './routes/notifications.routes';
+import ideasRoutes from './routes/ideas.routes';
+import supportRoutes from './routes/support.routes';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { startNotificationsCron } from './jobs/notifications.job';
 
@@ -49,6 +51,8 @@ app.use('/api/transactions', transactionsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
+app.use('/api/ideas', ideasRoutes);
+app.use('/api/support', supportRoutes);
 
 // Error handlers
 app.use(notFound);
@@ -65,6 +69,8 @@ app.listen(PORT, () => {
   console.log(`📊 Dashboard endpoints available at /api/dashboard`);
   console.log(`💎 Subscriptions endpoints available at /api/subscriptions`);
   console.log(`🔔 Notifications endpoints available at /api/notifications`);
+  console.log(`💡 Ideas endpoints available at /api/ideas`);
+  console.log(`🎟️  Support endpoints available at /api/support`);
   
   // Iniciar cron job de notificações
   startNotificationsCron();
