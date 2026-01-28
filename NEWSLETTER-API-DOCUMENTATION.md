@@ -18,32 +18,16 @@ Authorization: Bearer {seu-token-jwt}
 
 **POST** `/api/newsletter/send`
 
-Envia uma newsletter totalmente personalizada.
+Envia uma newsletter totalmente personalizada com HTML livre.
 
-**Requer autenticação:** ✅ Sim
+**Requer autenticação:** ✅ Sim (apenas administradores)
 
 **Body:**
 ```json
 {
-  "to": "usuario@email.com",  // ou ["email1@teste.com", "email2@teste.com"]
+  "to": "usuario@email.com",
   "subject": "Assunto do Email",
-  "title": "Título Principal da Newsletter",
-  "subtitle": "Subtítulo ou descrição breve",
-  "content": "Primeiro parágrafo do conteúdo",
-  "additionalContent": "Segundo parágrafo (opcional)",
-  "infoBox": "Mensagem de dica/informação (opcional)",
-  "successBox": "Mensagem de sucesso (opcional)",
-  "warningBox": "Mensagem de aviso (opcional)",
-  "featuresTitle": "Título da seção de features (opcional)",
-  "features": [
-    {
-      "title": "Título do recurso",
-      "description": "Descrição do recurso"
-    }
-  ],
-  "ctaUrl": "https://fingestor.com.br/dashboard",
-  "ctaText": "Acessar Dashboard",
-  "closingText": "Mensagem de fechamento (opcional)"
+  "htmlBody": "<h1>Meu Conteúdo</h1><p>Texto livre com {TAG_INFO}tags personalizadas{/TAG_INFO}</p>"
 }
 ```
 
@@ -54,6 +38,128 @@ Envia uma newsletter totalmente personalizada.
   "messageId": "abc123xyz",
   "message": "Newsletter enviada com sucesso"
 }
+```
+
+---
+
+### 📝 Tags Disponíveis para HTML
+
+Você pode usar estas tags dentro do campo `htmlBody` para adicionar componentes estilizados:
+
+#### 1. Caixa de Informação (Azul)
+```html
+{TAG_INFO}
+  Sua mensagem de informação aqui
+{/TAG_INFO}
+```
+**Renderiza:** Box azul com ícone de informação
+
+#### 2. Caixa de Sucesso (Verde)
+```html
+{TAG_SUCCESS}
+  Operação concluída com sucesso!
+{/TAG_SUCCESS}
+```
+**Renderiza:** Box verde com ícone de check
+
+#### 3. Caixa de Aviso (Amarelo)
+```html
+{TAG_WARNING}
+  Atenção: prazo próximo do vencimento
+{/TAG_WARNING}
+```
+**Renderiza:** Box amarelo com ícone de alerta
+
+#### 4. Botão Call-to-Action
+```html
+{TAG_BUTTON|https://fingestor.com.br/dashboard}
+  Acessar Dashboard
+{/TAG_BUTTON}
+```
+**Renderiza:** Botão roxo destacado com link
+
+#### 5. Lista de Features
+```html
+{TAG_FEATURES_START|Novidades desta semana}
+
+{TAG_FEATURE_ITEM|Dashboard Renovado}
+Nova interface mais clara e intuitiva
+{/TAG_FEATURE_ITEM}
+
+{TAG_FEATURE_ITEM|Exportação Excel}
+Exporte seus relatórios em formato XLSX
+{/TAG_FEATURE_ITEM}
+
+{/TAG_FEATURES_END}
+```
+**Renderiza:** Seção com título e lista de cards
+
+#### 6. Separador Horizontal
+```html
+{TAG_DIVIDER}
+```
+**Renderiza:** Linha horizontal cinza para separar seções
+
+#### 7. Espaçamento
+```html
+{TAG_SPACE|20}
+```
+**Renderiza:** Espaço vertical em pixels (útil para ajustar layout)
+
+---
+
+### 📋 Exemplo Completo de Newsletter
+
+```json
+{
+  "to": "usuario@email.com",
+  "subject": "Bem-vindo ao Fingestor!",
+  "htmlBody": "<h1>Olá, João! 👋</h1><p>É um prazer ter você conosco. O Fingestor é sua plataforma completa de gestão financeira.</p>{TAG_SPACE|10}<h2>Comece agora:</h2>{TAG_FEATURES_START|Principais Funcionalidades}{TAG_FEATURE_ITEM|Dashboard em Tempo Real}Visualize todas as suas finanças em um único lugar{/TAG_FEATURE_ITEM}{TAG_FEATURE_ITEM|Controle de Transações}Registre receitas e despesas facilmente{/TAG_FEATURE_ITEM}{TAG_FEATURE_ITEM|Relatórios DRE}Acompanhe o desempenho do seu negócio{/TAG_FEATURE_ITEM}{/TAG_FEATURES_END}{TAG_SPACE|20}{TAG_SUCCESS}Sua conta está ativa e pronta para usar!{/TAG_SUCCESS}{TAG_SPACE|15}{TAG_BUTTON|https://fingestor.com.br/dashboard}Acessar Meu Dashboard{/TAG_BUTTON}<p style='margin-top:30px;color:#6b7280;'>Qualquer dúvida, estamos à disposição!</p>"
+}
+```
+
+### 📋 Exemplo Formatado (para facilitar leitura)
+
+```html
+<h1>Olá, João! 👋</h1>
+
+<p>É um prazer ter você conosco. O Fingestor é sua plataforma completa de gestão financeira.</p>
+
+{TAG_SPACE|10}
+
+<h2>Comece agora:</h2>
+
+{TAG_FEATURES_START|Principais Funcionalidades}
+
+{TAG_FEATURE_ITEM|Dashboard em Tempo Real}
+Visualize todas as suas finanças em um único lugar
+{/TAG_FEATURE_ITEM}
+
+{TAG_FEATURE_ITEM|Controle de Transações}
+Registre receitas e despesas facilmente
+{/TAG_FEATURE_ITEM}
+
+{TAG_FEATURE_ITEM|Relatórios DRE}
+Acompanhe o desempenho do seu negócio
+{/TAG_FEATURE_ITEM}
+
+{/TAG_FEATURES_END}
+
+{TAG_SPACE|20}
+
+{TAG_SUCCESS}
+Sua conta está ativa e pronta para usar!
+{/TAG_SUCCESS}
+
+{TAG_SPACE|15}
+
+{TAG_BUTTON|https://fingestor.com.br/dashboard}
+Acessar Meu Dashboard
+{/TAG_BUTTON}
+
+<p style='margin-top:30px;color:#6b7280;'>
+  Qualquer dúvida, estamos à disposição!
+</p>
 ```
 
 ---

@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import { getSupabaseClient, supabaseAdmin } from "../config/database";
 import { AuthRequest } from "../middleware/auth";
 import { EmailService } from "../services/email.service";
-import crypto from "crypto";
+import { encryptUserIdWithIV } from "../utils/crypto.utils";
 
 // Inicializar Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -570,10 +570,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
     if (profile?.email) {
       const emailService = new EmailService();
-      const unsubscribeToken = crypto
-        .createHash('sha256')
-        .update(`${profile.email}:${process.env.JWT_SECRET || 'secret'}`)
-        .digest('hex');
+      const unsubscribeToken = encryptUserIdWithIV(userId);
 
       const planNames: Record<string, string> = {
         mensal: 'Mensal',

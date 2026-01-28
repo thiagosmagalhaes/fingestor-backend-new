@@ -9,7 +9,7 @@ export const isUserAdmin = async (accessToken: string, userId: string): Promise<
     const supabase = getSupabaseClient(accessToken);
     const { data } = await supabase
         .from('user_roles')
-        .select('role')
+    .select('role')
         .eq('user_id', userId)
         .eq('role', 'admin')
         .single();

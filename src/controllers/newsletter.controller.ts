@@ -1,9 +1,10 @@
 import { Request, Response } from 'express';
 import { EmailService } from '../services/email.service';
-import { SendNewsletterRequest } from '../types/newsletter.types';
 import { isUserAdmin } from '../middleware/adminAuth';
 import { AuthRequest } from '../middleware/auth';
-import crypto from 'crypto';
+import { encryptUserIdWithIV } from '../utils/crypto.utils';
+import { processNewsletterTags } from '../utils/newsletter-tags.utils';
+import { supabaseAdmin } from '../config/database';
 
 export class NewsletterController {
   private emailService: EmailService;
@@ -34,34 +35,35 @@ export class NewsletterController {
         });
       }
 
-      const data: SendNewsletterRequest = req.body;
+      const { to, subject, htmlBody } = req.body;
 
       // Validar campos obrigatórios
-      if (!data.to || !data.subject || !data.title || !data.subtitle || !data.content) {
+      if (!to || !subject || !htmlBody) {
         return res.status(400).json({ 
-          error: 'Campos obrigatórios: to, subject, title, subtitle, content' 
+          error: 'Campos obrigatórios: to, subject, htmlBody' 
         });
       }
 
-      // Gerar token de descadastro (em produção, usar sistema mais robusto)
-      const unsubscribeToken = this.generateUnsubscribeToken(
-        Array.isArray(data.to) ? data.to[0] : data.to
-      );
+      // Processar tags personalizadas no HTML
+      const processedHtml = processNewsletterTags(htmlBody);
 
-      const result = await this.emailService.sendNewsletter(data.to, {
-        emailSubject: data.subject,
-        title: data.title,
-        subtitle: data.subtitle,
-        content: data.content,
-        additionalContent: data.additionalContent,
-        infoBox: data.infoBox,
-        successBox: data.successBox,
-        warningBox: data.warningBox,
-        featuresTitle: data.featuresTitle,
-        features: data.features,
-        ctaUrl: data.ctaUrl,
-        ctaText: data.ctaText,
-        closingText: data.closingText,
+      // Buscar userId do primeiro email para gerar token
+      const email = Array.isArray(to) ? to[0] : to;
+      const userIdForToken = await this.getUserIdFromEmail(email);
+      
+      if (!userIdForToken) {
+        return res.status(404).json({
+          error: 'Usuario nao encontrado para gerar token de unsubscribe'
+        });
+      }
+
+      const unsubscribeToken = this.generateUnsubscribeToken(userIdForToken);
+
+      const result = await this.emailService.sendNewsletter(to, {
+        emailSubject: subject,
+        title: '',
+        subtitle: '',
+        content: processedHtml,
         unsubscribeUrl: `${process.env.FRONTEND_URL}/unsubscribe?token=${unsubscribeToken}`
       });
 
@@ -97,7 +99,15 @@ export class NewsletterController {
         });
       }
 
-      const unsubscribeToken = this.generateUnsubscribeToken(email);
+      // Buscar user_id a partir do email
+      const userId = await this.getUserIdFromEmail(email);
+      if (!userId) {
+        return res.status(404).json({
+          error: 'Usuario nao encontrado'
+        });
+      }
+
+      const unsubscribeToken = this.generateUnsubscribeToken(userId);
       
       const result = await this.emailService.sendWelcomeNewsletter(
         email,
@@ -137,7 +147,15 @@ export class NewsletterController {
         });
       }
 
-      const unsubscribeToken = this.generateUnsubscribeToken(email);
+      // Buscar user_id a partir do email
+      const userId = await this.getUserIdFromEmail(email);
+      if (!userId) {
+        return res.status(404).json({
+          error: 'Usuario nao encontrado'
+        });
+      }
+
+      const unsubscribeToken = this.generateUnsubscribeToken(userId);
       
       const result = await this.emailService.sendTrialExpiringNewsletter(
         email,
@@ -178,7 +196,15 @@ export class NewsletterController {
         });
       }
 
-      const unsubscribeToken = this.generateUnsubscribeToken(email);
+      // Buscar user_id a partir do email
+      const userId = await this.getUserIdFromEmail(email);
+      if (!userId) {
+        return res.status(404).json({
+          error: 'Usuario nao encontrado'
+        });
+      }
+
+      const unsubscribeToken = this.generateUnsubscribeToken(userId);
       
       const result = await this.emailService.sendSubscriptionConfirmedNewsletter(
         email,
@@ -211,8 +237,8 @@ export class NewsletterController {
    */
   async sendUpdatesNewsletter(req: Request, res: Response): Promise<Response> {
     try {
-      const userId = (req as any).user?.id;
-      if (!userId) {
+      const requestUserId = (req as any).user?.id;
+      if (!requestUserId) {
         return res.status(401).json({ error: 'Não autorizado' });
       }
 
@@ -230,7 +256,15 @@ export class NewsletterController {
         });
       }
 
-      const unsubscribeToken = this.generateUnsubscribeToken(emails[0]);
+      // Buscar user_id do primeiro email (assumindo mesmo unsubscribe para todos)
+      const userId = await this.getUserIdFromEmail(emails[0]);
+      if (!userId) {
+        return res.status(404).json({
+          error: 'Usuario nao encontrado para o primeiro email'
+        });
+      }
+
+      const unsubscribeToken = this.generateUnsubscribeToken(userId);
       
       const result = await this.emailService.sendUpdatesNewsletter(
         emails,
@@ -258,12 +292,26 @@ export class NewsletterController {
   }
 
   /**
-   * Gera token de descadastro (simplificado - em produção usar algo mais seguro)
+   * Gera token de descadastro criptografando o user_id
    */
-  private generateUnsubscribeToken(email: string): string {
-    return crypto
-      .createHash('sha256')
-      .update(`${email}:${process.env.JWT_SECRET || 'secret'}`)
-      .digest('hex');
+  private generateUnsubscribeToken(userId: string): string {
+    return encryptUserIdWithIV(userId);
+  }
+
+  /**
+   * Busca user_id a partir do email
+   */
+  private async getUserIdFromEmail(email: string): Promise<string | null> {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('user_id')
+      .eq('email', email)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return data.user_id;
   }
 }

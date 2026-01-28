@@ -1,5 +1,6 @@
 import { EmailService } from '../services/email.service';
 import { supabaseAdmin } from '../config/database';
+import { encryptUserIdWithIV } from '../utils/crypto.utils';
 
 const emailService = new EmailService();
 
@@ -94,11 +95,8 @@ export async function checkTrialExpiring() {
         const now = new Date();
         const daysRemaining = Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-        // Gerar token de unsubscribe
-        const crypto = await import('crypto');
-        const unsubscribeToken = crypto.createHash('sha256')
-          .update(user.user_id + process.env.JWT_SECRET || 'secret')
-          .digest('hex');
+        // Gerar token de unsubscribe usando criptografia AES
+        const unsubscribeToken = encryptUserIdWithIV(user.user_id);
 
         const result = await emailService.sendTrialExpiringNewsletter(
           user.email,

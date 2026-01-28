@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import supabase from '../config/database';
 import { EmailService } from '../services/email.service';
-import crypto from 'crypto';
+import { encryptUserIdWithIV } from '../utils/crypto.utils';
 
 interface LoginRequest {
   email: string;
@@ -171,10 +171,7 @@ export class AuthController {
       // Enviar newsletter de boas-vindas (não bloqueia o cadastro)
       if (data.user?.email) {
         const emailService = new EmailService();
-        const unsubscribeToken = crypto
-          .createHash('sha256')
-          .update(`${data.user.email}:${process.env.JWT_SECRET || 'secret'}`)
-          .digest('hex');
+        const unsubscribeToken = encryptUserIdWithIV(data.user.id);
         
         emailService.sendWelcomeNewsletter(
           data.user.email,
