@@ -1,20 +1,8 @@
 import { Response } from 'express';
 import { getSupabaseClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { isUserAdmin } from '../middleware/adminAuth';
 import sanitizeHtml from 'sanitize-html';
-
-// Helper to check if user is admin
-const isUserAdmin = async (accessToken: string, userId: string): Promise<boolean> => {
-    const supabase = getSupabaseClient(accessToken);
-    const { data } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .eq('role', 'admin')
-        .single();
-    
-    return !!data;
-};
 
 // Sanitize HTML configuration
 const sanitizeConfig = {

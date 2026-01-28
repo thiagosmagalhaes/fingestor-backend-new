@@ -11,8 +11,11 @@ import subscriptionsRoutes from './routes/subscriptions.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import ideasRoutes from './routes/ideas.routes';
 import supportRoutes from './routes/support.routes';
+import newsletterRoutes from './routes/newsletter.routes';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { startNotificationsCron } from './jobs/notifications.job';
+import { startWhatsAppJobs } from './jobs/whatsapp.job';
+import { startTrialExpiringJob } from './jobs/trial-expiring.job';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -53,6 +56,7 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
 app.use('/api/ideas', ideasRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/newsletter', newsletterRoutes);
 
 // Error handlers
 app.use(notFound);
@@ -71,9 +75,16 @@ app.listen(PORT, () => {
   console.log(`🔔 Notifications endpoints available at /api/notifications`);
   console.log(`💡 Ideas endpoints available at /api/ideas`);
   console.log(`🎟️  Support endpoints available at /api/support`);
+  console.log(`📧 Newsletter endpoints available at /api/newsletter`);
   
   // Iniciar cron job de notificações
   startNotificationsCron();
+  
+  // Iniciar cron jobs de WhatsApp
+  startWhatsAppJobs();
+  
+  // Iniciar cron job de trial expirando
+  startTrialExpiringJob();
 });
 
 export default app;

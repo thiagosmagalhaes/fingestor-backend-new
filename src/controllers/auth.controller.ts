@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import supabase from '../config/database';
+import { EmailService } from '../services/email.service';
+import crypto from 'crypto';
 
 interface LoginRequest {
   email: string;
@@ -165,6 +167,24 @@ export class AuthController {
 
       // Verificar se o email precisa ser confirmado
       const needsEmailConfirmation = !data.session;
+
+      // Enviar newsletter de boas-vindas (não bloqueia o cadastro)
+      if (data.user?.email) {
+        const emailService = new EmailService();
+        const unsubscribeToken = crypto
+          .createHash('sha256')
+          .update(`${data.user.email}:${process.env.JWT_SECRET || 'secret'}`)
+          .digest('hex');
+        
+        emailService.sendWelcomeNewsletter(
+          data.user.email,
+          fullName,
+          unsubscribeToken
+        ).catch(error => {
+          console.error('Erro ao enviar newsletter de boas-vindas:', error);
+          // Não falha o cadastro se o email falhar
+        });
+      }
 
       if (needsEmailConfirmation) {
         return res.status(201).json({

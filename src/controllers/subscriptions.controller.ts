@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import Stripe from "stripe";
 import { getSupabaseClient, supabaseAdmin } from "../config/database";
 import { AuthRequest } from "../middleware/auth";
+import { EmailService } from "../services/email.service";
+import crypto from "crypto";
 
 // Inicializar Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
@@ -555,6 +557,42 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (error) {
     console.error("Erro ao salvar assinatura:", error);
+    return;
+  }
+
+  // Enviar newsletter de confirmação de assinatura
+  try {
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("email, full_name")
+      .eq("user_id", userId)
+      .single();
+
+    if (profile?.email) {
+      const emailService = new EmailService();
+      const unsubscribeToken = crypto
+        .createHash('sha256')
+        .update(`${profile.email}:${process.env.JWT_SECRET || 'secret'}`)
+        .digest('hex');
+
+      const planNames: Record<string, string> = {
+        mensal: 'Mensal',
+        semestral: 'Semestral',
+        anual: 'Anual'
+      };
+
+      await emailService.sendSubscriptionConfirmedNewsletter(
+        profile.email,
+        profile.full_name || 'Usuário',
+        planNames[planType] || planType,
+        unsubscribeToken
+      );
+
+      console.log(`✅ Newsletter de confirmação enviada para ${profile.email}`);
+    }
+  } catch (emailError) {
+    console.error('Erro ao enviar newsletter de confirmação:', emailError);
+    // Não falha o webhook se o email falhar
   }
 }
 
