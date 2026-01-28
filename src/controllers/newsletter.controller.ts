@@ -35,49 +35,70 @@ export class NewsletterController {
         });
       }
 
-      const { to, subject, htmlBody } = req.body;
+      const { subject, htmlBody } = req.body;
 
       // Validar campos obrigatórios
-      if (!to || !subject || !htmlBody) {
+      if (!subject || !htmlBody) {
         return res.status(400).json({ 
-          error: 'Campos obrigatórios: to, subject, htmlBody' 
+          error: 'Campos obrigatórios: subject, htmlBody' 
         });
       }
 
       // Processar tags personalizadas no HTML
       const processedHtml = processNewsletterTags(htmlBody);
 
-      // Buscar userId do primeiro email para gerar token
-      const email = Array.isArray(to) ? to[0] : to;
-      const userIdForToken = await this.getUserIdFromEmail(email);
-      
-      if (!userIdForToken) {
-        return res.status(404).json({
-          error: 'Usuario nao encontrado para gerar token de unsubscribe'
+      // Buscar todos os usuários inscritos na newsletter
+      const { data: subscribedUsers, error: viewError } = await supabaseAdmin
+        .from('subscribed_users_view')
+        .select('user_id, email, full_name');
+
+      if (viewError) {
+        console.error('Erro ao consultar usuarios inscritos:', viewError);
+        return res.status(500).json({
+          error: 'Erro ao buscar lista de inscritos'
         });
       }
 
-      const unsubscribeToken = this.generateUnsubscribeToken(userIdForToken);
-
-      const result = await this.emailService.sendNewsletter(to, {
-        emailSubject: subject,
-        title: '',
-        subtitle: '',
-        content: processedHtml,
-        unsubscribeUrl: `${process.env.FRONTEND_URL}/unsubscribe?token=${unsubscribeToken}`
-      });
-
-      if (!result.success) {
-        return res.status(500).json({ 
-          error: 'Erro ao enviar newsletter',
-          details: result.error 
+      if (!subscribedUsers || subscribedUsers.length === 0) {
+        return res.status(404).json({
+          error: 'Nenhum usuario inscrito encontrado'
         });
+      }
+
+      // Enviar para cada usuário inscrito com token individual
+      const results = [];
+      const errors = [];
+
+      for (const user of subscribedUsers) {
+        try {
+          const unsubscribeToken = this.generateUnsubscribeToken(user.user_id);
+
+          const result = await this.emailService.sendNewsletter(user.email, {
+            emailSubject: subject,
+            title: '',
+            subtitle: '',
+            content: processedHtml,
+            unsubscribeUrl: `${process.env.FRONTEND_URL}/unsubscribe?token=${unsubscribeToken}`
+          });
+
+          if (result.success) {
+            results.push({ email: user.email, messageId: result.messageId });
+          } else {
+            errors.push({ email: user.email, error: result.error });
+          }
+        } catch (error) {
+          errors.push({ email: user.email, error: String(error) });
+        }
       }
 
       return res.json({ 
         success: true,
-        messageId: result.messageId,
-        message: 'Newsletter enviada com sucesso'
+        message: 'Newsletter processada',
+        sent: results.length,
+        failed: errors.length,
+        total: subscribedUsers.length,
+        results,
+        errors: errors.length > 0 ? errors : undefined
       });
     } catch (error) {
       console.error('Erro ao enviar newsletter:', error);
