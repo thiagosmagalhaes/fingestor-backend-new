@@ -10,12 +10,6 @@ interface ResendEmailResponse {
   created_at: string;
 }
 
-interface ResendErrorResponse {
-  statusCode: number;
-  message: string;
-  name: string;
-}
-
 export class EmailService {
   private apiKey: string;
   private fromEmail: string;
@@ -40,6 +34,99 @@ export class EmailService {
   }
 
   /**
+   * Envia múltiplas newsletters em batch (até 100 por vez)
+   */
+  async sendNewsletterBatch(
+    emails: Array<{ to: string; data: NewsletterData }>
+  ): Promise<{ success: boolean; messageIds?: string[]; error?: any }> {
+    try {
+      if (!this.apiKey) {
+        console.log('📧 [MODO DEV] Newsletter batch não enviada (sem API key):', {
+          count: emails.length
+        });
+        return { success: true, messageIds: emails.map(() => 'dev-mode-skip') };
+      }
+
+      // Preparar batch de emails
+      const batch = emails.map(({ to, data }) => {
+        const html = this.compileTemplate(this.newsletterTemplate, data);
+        return {
+          from: this.fromEmail,
+          to: [to],
+          subject: data.emailSubject,
+          html
+        };
+      });
+
+      // Enviar batch com retry
+      const result = await this.sendBatchWithRetry(batch);
+
+      if (!result.success) {
+        console.error('❌ Erro ao enviar batch via Resend:', result.error);
+        return { success: false, error: result.error };
+      }
+
+      console.log(`✅ Batch enviado com sucesso: ${result.messageIds?.length} emails`);
+      
+      return { success: true, messageIds: result.messageIds };
+    } catch (error) {
+      console.error('❌ Erro ao enviar newsletter batch:', error);
+      return { success: false, error };
+    }
+  }
+
+  /**
+   * Envia batch com retry e exponential backoff
+   */
+  private async sendBatchWithRetry(
+    batch: Array<{ from: string; to: string[]; subject: string; html: string }>,
+    retries: number = 3,
+    delay: number = 1000
+  ): Promise<{ success: boolean; messageIds?: string[]; error?: any }> {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const response = await fetch('https://api.resend.com/emails/batch', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(batch)
+        });
+
+        const result = await response.json() as any;
+
+        // Se sucesso, retornar IDs
+        if (response.ok) {
+          const messageIds = result.data.map((item: any) => item.id);
+          return { success: true, messageIds };
+        }
+
+        // Se rate limit (429), fazer retry com backoff
+        if (response.status === 429) {
+          if (attempt < retries - 1) {
+            const backoffDelay = delay * Math.pow(2, attempt);
+            console.log(`⏳ Rate limit atingido no batch. Aguardando ${backoffDelay}ms... (tentativa ${attempt + 1}/${retries})`);
+            await this.sleep(backoffDelay);
+            continue;
+          }
+        }
+
+        // Se outro erro, retornar
+        return { success: false, error: result };
+      } catch (error) {
+        if (attempt < retries - 1) {
+          await this.sleep(delay * Math.pow(2, attempt));
+          continue;
+        }
+        return { success: false, error };
+      }
+    }
+
+    return { success: false, error: 'Max retries atingido no batch' };
+  }
+
+  /**
    * Envia uma newsletter usando o template padrão
    */
   async sendNewsletter(
@@ -58,37 +145,89 @@ export class EmailService {
       // Compilar template com dados
       const html = this.compileTemplate(this.newsletterTemplate, data);
 
-      // Fazer requisição para Resend API
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: this.fromEmail,
-          to: Array.isArray(to) ? to : [to],
-          subject: data.emailSubject,
-          html
-        })
+      // Fazer requisição para Resend API com retry e exponential backoff
+      const result = await this.sendWithRetry({
+        from: this.fromEmail,
+        to: Array.isArray(to) ? to : [to],
+        subject: data.emailSubject,
+        html
       });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        const error = result as ResendErrorResponse;
-        console.error('❌ Erro ao enviar email via Resend:', error);
-        return { success: false, error };
+      if (!result.success) {
+        console.error('❌ Erro ao enviar email via Resend:', result.error);
+        return { success: false, error: result.error };
       }
 
-      const emailData = result as ResendEmailResponse;
-      console.log('✅ Email enviado com sucesso:', emailData.id);
+      console.log('✅ Email enviado com sucesso:', result.messageId);
       
-      return { success: true, messageId: emailData.id };
+      return { success: true, messageId: result.messageId };
     } catch (error) {
       console.error('❌ Erro ao enviar newsletter:', error);
       return { success: false, error };
     }
+  }
+
+  /**
+   * Envia email com retry e exponential backoff para rate limiting
+   */
+  private async sendWithRetry(
+    emailData: {
+      from: string;
+      to: string[];
+      subject: string;
+      html: string;
+    },
+    retries: number = 3,
+    delay: number = 1000
+  ): Promise<{ success: boolean; messageId?: string; error?: any }> {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(emailData)
+        });
+
+        const result = await response.json();
+
+        // Se sucesso, retornar imediatamente
+        if (response.ok) {
+          const emailResponse = result as ResendEmailResponse;
+          return { success: true, messageId: emailResponse.id };
+        }
+
+        // Se rate limit (429), fazer retry com backoff
+        if (response.status === 429) {
+          if (attempt < retries - 1) {
+            const backoffDelay = delay * Math.pow(2, attempt); // Exponential backoff
+            console.log(`⏳ Rate limit atingido. Aguardando ${backoffDelay}ms antes de tentar novamente... (tentativa ${attempt + 1}/${retries})`);
+            await this.sleep(backoffDelay);
+            continue;
+          }
+        }
+
+        // Se outro erro, retornar
+        return { success: false, error: result };
+      } catch (error) {
+        if (attempt < retries - 1) {
+          await this.sleep(delay * Math.pow(2, attempt));
+          continue;
+        }
+        return { success: false, error };
+      }
+    }
+
+    return { success: false, error: 'Max retries atingido' };
+  }
+
+  /**
+   * Sleep helper para exponential backoff
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

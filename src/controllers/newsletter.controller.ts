@@ -65,29 +65,64 @@ export class NewsletterController {
         });
       }
 
-      // Enviar para cada usuário inscrito com token individual
-      const results = [];
-      const errors = [];
+      // Agrupar em lotes de 100 emails (limite do Resend batch API)
+      const BATCH_SIZE = 100;
+      const batches = [];
+      for (let i = 0; i < subscribedUsers.length; i += BATCH_SIZE) {
+        batches.push(subscribedUsers.slice(i, i + BATCH_SIZE));
+      }
 
-      for (const user of subscribedUsers) {
+      console.log(`📧 Enviando newsletter para ${subscribedUsers.length} usuários em ${batches.length} lotes`);
+
+      const results: Array<{ email: string; messageId: string }> = [];
+      const errors: Array<{ email: string; error: any }> = [];
+
+      // Processar cada batch
+      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+        const batch = batches[batchIndex];
+        
         try {
-          const unsubscribeToken = this.generateUnsubscribeToken(user.user_id);
+          // Preparar emails do batch com tokens individuais
+          const batchEmails = batch.map(user => ({
+            to: user.email,
+            data: {
+              emailSubject: subject,
+              title: '',
+              subtitle: '',
+              content: processedHtml,
+              unsubscribeUrl: `${process.env.FRONTEND_URL}/unsubscribe?token=${this.generateUnsubscribeToken(user.user_id)}`
+            }
+          }));
 
-          const result = await this.emailService.sendNewsletter(user.email, {
-            emailSubject: subject,
-            title: '',
-            subtitle: '',
-            content: processedHtml,
-            unsubscribeUrl: `${process.env.FRONTEND_URL}/unsubscribe?token=${unsubscribeToken}`
-          });
+          // Enviar batch
+          const result = await this.emailService.sendNewsletterBatch(batchEmails);
 
-          if (result.success) {
-            results.push({ email: user.email, messageId: result.messageId });
+          if (result.success && result.messageIds) {
+            // Registrar sucessos
+            batch.forEach((user, idx) => {
+              results.push({ 
+                email: user.email, 
+                messageId: result.messageIds![idx] 
+              });
+            });
+            console.log(`✅ Lote ${batchIndex + 1}/${batches.length} enviado com sucesso (${batch.length} emails)`);
           } else {
-            errors.push({ email: user.email, error: result.error });
+            // Registrar falhas
+            batch.forEach(user => {
+              errors.push({ email: user.email, error: result.error });
+            });
+            console.error(`❌ Lote ${batchIndex + 1}/${batches.length} falhou:`, result.error);
+          }
+
+          // Aguardar 500ms entre batches para respeitar rate limit
+          if (batchIndex < batches.length - 1) {
+            await this.sleep(500);
           }
         } catch (error) {
-          errors.push({ email: user.email, error: String(error) });
+          batch.forEach(user => {
+            errors.push({ email: user.email, error: String(error) });
+          });
+          console.error(`❌ Erro no lote ${batchIndex + 1}/${batches.length}:`, error);
         }
       }
 
@@ -97,6 +132,7 @@ export class NewsletterController {
         sent: results.length,
         failed: errors.length,
         total: subscribedUsers.length,
+        batches: batches.length,
         results,
         errors: errors.length > 0 ? errors : undefined
       });
@@ -334,5 +370,12 @@ export class NewsletterController {
     }
 
     return data.user_id;
+  }
+
+  /**
+   * Sleep helper para rate limiting
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
