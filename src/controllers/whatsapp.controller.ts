@@ -4,6 +4,8 @@ import {
   MessageKey,
   UserStats,
 } from "../types/whatsapp.types";
+import { EmailService } from "../services/email.service";
+import { encryptUserIdWithIV } from "../utils/crypto.utils";
 
 // Message templates - source of truth
 export const MESSAGE_TEMPLATES: MessageTemplate[] = [
@@ -115,6 +117,8 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`,
 
 
 export class WhatsAppController {
+  private static emailService = new EmailService();
+
   /**
    * Get message body based on user current state
    */
@@ -268,10 +272,10 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
    */
   static async getUserStats(userId: string): Promise<UserStats | null> {
     try {
-      // Get user profile with phone and created_at
+      // Get user profile with phone, email, full_name and created_at
       const { data: profile, error: profileError } = await supabaseAdmin
         .from("profiles")
-        .select("phone, created_at")
+        .select("phone, email, full_name, created_at")
         .eq("user_id", userId)
         .single();
 
@@ -351,6 +355,8 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
       return {
         userId,
         phone: profile.phone,
+        email: profile.email,
+        fullName: profile.full_name,
         createdAt: profile.created_at,
         accountCount: accountCount || 0,
         transactionCount: transactionCount || 0,
@@ -364,15 +370,18 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
   }
 
   /**
-   * Schedule a message for a user
+   * Schedule a message for a user (WhatsApp + Email)
    */
   static async scheduleMessage(
     userId: string,
     phone: string,
     template: MessageTemplate,
     scheduledFor: Date,
+    email?: string,
+    userName?: string,
   ): Promise<boolean> {
     try {
+      // 1. Agendar WhatsApp
       const { error } = await supabaseAdmin.from("whatsapp_message_queue").insert({
         user_id: userId,
         phone,
@@ -397,6 +406,30 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
       console.log(
         `Scheduled ${template.key} for user ${userId} at ${scheduledFor.toISOString()}`,
       );
+
+      // 2. Enviar email imediatamente (não agendar)
+      if (email && userName) {
+        try {
+          const unsubscribeToken = encryptUserIdWithIV(userId);
+          const emailResult = await this.emailService.sendEngagementAlert(
+            email,
+            userName,
+            template.key,
+            template.body,
+            unsubscribeToken
+          );
+
+          if (emailResult.success) {
+            console.log(`✅ Email de ${template.key} enviado para ${email}`);
+          } else {
+            console.error(`❌ Erro ao enviar email de ${template.key}:`, emailResult.error);
+          }
+        } catch (emailError) {
+          console.error(`❌ Erro ao processar email de ${template.key}:`, emailError);
+          // Não bloquear o agendamento do WhatsApp por erro de email
+        }
+      }
+
       return true;
     } catch (error) {
       console.error("Error in scheduleMessage:", error);
@@ -486,6 +519,8 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
               stats.phone,
               { ...template, body: messageBody },
               scheduledFor,
+              stats.email || undefined,
+              stats.fullName || undefined,
             );
 
             if (scheduled) {
@@ -516,6 +551,8 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
             stats.phone,
             { ...template, body: messageBody },
             scheduledFor,
+            stats.email || undefined,
+            stats.fullName || undefined,
           );
 
           if (scheduled) {
@@ -541,6 +578,8 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
               stats.phone,
               { ...comebackTemplate, body: messageBody },
               scheduledFor,
+              stats.email || undefined,
+              stats.fullName || undefined,
             );
 
             if (scheduled) {

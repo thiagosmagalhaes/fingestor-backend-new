@@ -32,6 +32,8 @@ export interface MessageTemplate {
 export interface UserStats {
   userId: string;
   phone: string | null;
+  email: string | null;
+  fullName: string | null;
   createdAt: string;
   accountCount: number;
   transactionCount: number;

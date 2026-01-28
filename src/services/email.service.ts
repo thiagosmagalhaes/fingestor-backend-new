@@ -272,6 +272,47 @@ export class EmailService {
   }
 
   /**
+   * Envia email de alerta de onboarding/engajamento
+   */
+  async sendEngagementAlert(
+    email: string,
+    userName: string,
+    messageKey: string,
+    messageBody: string,
+    unsubscribeToken: string
+  ): Promise<{ success: boolean; messageId?: string; error?: any }> {
+    // Mapear message_key para subject apropriado
+    const subjectMap: Record<string, string> = {
+      welcome_10min: 'Bem-vindo ao Fingestor! 👋',
+      create_account_24h: 'Vamos começar a organizar suas finanças?',
+      first_tx_48h: 'Próximo passo: sua primeira transação',
+      micro_win_72h: 'Um pequeno passo que faz diferença',
+      value_5d: 'Descubra para onde seu dinheiro está indo',
+      help_7d: 'Precisa de ajuda com o Fingestor?',
+      comeback_inactive: 'Sentimos sua falta no Fingestor'
+    };
+
+    const subject = subjectMap[messageKey] || 'Mensagem do Fingestor';
+    
+    // Converter quebras de linha em parágrafos HTML
+    const htmlContent = messageBody
+      .split('\n\n')
+      .map(p => `<p style="margin-bottom: 16px;">${p.replace(/\n/g, '<br>')}</p>`)
+      .join('');
+
+    return this.sendNewsletter(email, {
+      emailSubject: subject,
+      title: subject,
+      subtitle: `Olá ${userName}!`,
+      content: htmlContent,
+      ctaUrl: `${process.env.FRONTEND_URL}/dashboard`,
+      ctaText: 'Acessar Dashboard',
+      closingText: 'Qualquer dúvida, estamos à disposição!',
+      unsubscribeUrl: `${process.env.FRONTEND_URL}/unsubscribe?token=${unsubscribeToken}`
+    });
+  }
+
+  /**
    * Envia newsletter de trial expirando
    */
   async sendTrialExpiringNewsletter(
