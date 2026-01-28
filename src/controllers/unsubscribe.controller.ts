@@ -150,12 +150,17 @@ export class UnsubscribeController {
       // Atualizar preferencia para subscribed
       const { error: updateError } = await supabaseAdmin
         .from("newsletter_preferences")
-        .upsert({
-          user_id: matchedProfile.user_id,
-          email: matchedProfile.email,
-          subscribed: true,
-          unsubscribed_at: null,
-        });
+        .upsert(
+          {
+            user_id: matchedProfile.user_id,
+            email: matchedProfile.email,
+            subscribed: true,
+            unsubscribed_at: null,
+          },
+          {
+            onConflict: "user_id",
+          }
+        );
 
       if (updateError) {
         console.error("Erro ao reinscrever:", updateError);
