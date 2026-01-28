@@ -407,8 +407,8 @@ Se quiser retomar, estou por aqui pra te ajudar. 💪`;
         `Scheduled ${template.key} for user ${userId} at ${scheduledFor.toISOString()}`,
       );
 
-      // 2. Enviar email imediatamente (não agendar)
-      if (email && userName) {
+      // 2. Enviar email imediatamente (exceto welcome_10min que já tem email próprio)
+      if (email && userName && template.key !== 'welcome_10min') {
         try {
           const unsubscribeToken = encryptUserIdWithIV(userId);
           const emailResult = await this.emailService.sendEngagementAlert(
