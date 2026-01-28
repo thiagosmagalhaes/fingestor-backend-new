@@ -12,6 +12,7 @@ import notificationsRoutes from './routes/notifications.routes';
 import ideasRoutes from './routes/ideas.routes';
 import supportRoutes from './routes/support.routes';
 import newsletterRoutes from './routes/newsletter.routes';
+import unsubscribeRoutes from './routes/unsubscribe.routes';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { startNotificationsCron } from './jobs/notifications.job';
 import { startWhatsAppJobs } from './jobs/whatsapp.job';
@@ -57,6 +58,7 @@ app.use('/api/subscriptions', subscriptionsRoutes);
 app.use('/api/ideas', ideasRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/newsletter', newsletterRoutes);
+app.use('/api/unsubscribe', unsubscribeRoutes);
 
 // Error handlers
 app.use(notFound);
