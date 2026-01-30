@@ -1,9 +1,9 @@
-# Roteiro de Vídeo - Caixa Mestra
+# Roteiro de Vídeo - Fingestor
 ## Guia Completo de Funcionalidades para Produção de Vídeo
 
 ---
 
-## 🎬 SOBRE O CAIXA MESTRA
+## 🎬 SOBRE O FINGESTOR
 
 **O que é:** Sistema completo de gestão financeira online para empresas e pessoas físicas
 **Para quem:** Empreendedores, pequenos negócios, freelancers e qualquer pessoa que quer organizar suas finanças
@@ -217,7 +217,7 @@ PAINEL DE CONTROLE: TUDO QUE VOCÊ PRECISA NUMA TELA SÓ
 ### A Pergunta Mais Importante:
 **"Meu negócio está dando lucro ou prejuízo?"**
 
-O Caixa Mestra te dá a resposta em segundos com o **Relatório de Resultados (DRE)**!
+O Fingestor te dá a resposta em segundos com o **Relatório de Resultados (DRE)**!
 
 ### Como Funciona (de forma simples):
 
@@ -738,7 +738,7 @@ O sistema é **100% responsivo** e funciona perfeitamente em:
 ## 📋 SCRIPTS DE NARRAÇÃO SUGERIDOS
 
 ### Abertura:
-> "Você já perdeu o controle das suas finanças? Não sabe se seu negócio está dando lucro? Esqueceu de pagar uma conta importante? O Fingestor - Caixa Mestra é a solução completa para sua gestão financeira!"
+> "Você já perdeu o controle das suas finanças? Não sabe se seu negócio está dando lucro? Esqueceu de pagar uma conta importante? O Fingestor - Fingestor é a solução completa para sua gestão financeira!"
 
 ### Transição para Funcionalidades:
 > "Veja tudo que o sistema oferece..."
@@ -748,7 +748,7 @@ O sistema é **100% responsivo** e funciona perfeitamente em:
 
 ### Fechamento:
 > "E o melho (10-15 segundos):
-> "Você está perdendo dinheiro sem saber? Esquece contas e paga juros? Não sabe se seu negócio está dando lucro de verdade? Então você PRECISA conhecer o Caixa Mestra!"
+> "Você está perdendo dinheiro sem saber? Esquece contas e paga juros? Não sabe se seu negócio está dando lucro de verdade? Então você PRECISA conhecer o Fingestor!"
 
 ### Apresentação do Sistema (5 segundos):
 > "O sistema completo de gestão financeira que funciona tanto para você quanto para sua empresa!"
@@ -776,4 +776,4 @@ O sistema é **100% responsivo** e funciona perfeitamente em:
 
 *Documento gerado em: Janeiro de 2026*
 *Versão: 1.0*
-*Sistema: Fingestor (Caixa Mestra)*
+*Sistema: Fingestor (Fingestor)*

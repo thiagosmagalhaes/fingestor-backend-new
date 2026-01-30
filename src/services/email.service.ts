@@ -242,7 +242,7 @@ export class EmailService {
       emailSubject: 'Bem-vindo ao Fingestor! 🎉',
       title: `Bem-vindo ao Fingestor, ${userName}!`,
       subtitle: 'Estamos felizes em ter você conosco',
-      content: 'Agora você tem acesso completo a todas as ferramentas de controle financeiro pensadas especialmente para MEI.',
+      content: 'Agora você tem acesso completo a todas as ferramentas de controle financeiro para organizar suas finanças.',
       
       featuresTitle: 'O que você pode fazer no Fingestor:',
       features: [
@@ -252,11 +252,11 @@ export class EmailService {
         },
         {
           title: 'DRE automático',
-          description: 'Saiba seu lucro real sem precisar de contador'
+          description: 'Saiba seu lucro real e acompanhe seus resultados'
         },
         {
           title: 'Dashboard completo',
-          description: 'Visualize a saúde financeira da sua empresa'
+          description: 'Visualize a saúde das suas finanças'
         },
         {
           title: 'Gestão de cartões',
@@ -324,10 +324,10 @@ export class EmailService {
     return this.sendNewsletter(email, {
       emailSubject: `Seu período de teste expira em ${daysRemaining} dias`,
       title: 'Seu período de teste está terminando',
-      subtitle: 'Não perca o acesso ao controle financeiro da sua empresa',
+      subtitle: 'Não perca o acesso ao seu controle financeiro',
       content: `Olá ${userName}, seu período de teste gratuito expira em ${daysRemaining} dias. Continue aproveitando todas as funcionalidades do Fingestor assinando um de nossos planos.`,
       
-      warningBox: `Seu trial expira em ${daysRemaining} dias. Assine agora para não perder seus dados e continuar com o controle financeiro.`,
+      warningBox: `Seu trial expira em ${daysRemaining} dias. Assine agora para não perder seus dados e continuar com o controle das suas finanças.`,
       
       ctaUrl: `${process.env.FRONTEND_URL}/pricing`,
       ctaText: 'Ver Planos e Preços',
