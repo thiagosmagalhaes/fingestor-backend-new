@@ -321,7 +321,7 @@ export class TransactionsController {
         is_installment: isInstallment || false,
         installment_number: installmentNumber || null,
         total_installments: totalInstallments || null,
-        credit_card_id: creditCardId || null,
+        credit_card_id: isCreditCard ? creditCardId || null : null,
         is_credit_card: !!isCreditCard,
         notes: notes?.trim() || null,
       };
@@ -463,7 +463,7 @@ export class TransactionsController {
       if (isInstallment !== undefined) updateData.is_installment = isInstallment;
       if (installmentNumber !== undefined) updateData.installment_number = installmentNumber;
       if (totalInstallments !== undefined) updateData.total_installments = totalInstallments;
-      if (creditCardId !== undefined) updateData.credit_card_id = creditCardId;
+      updateData.credit_card_id = isCreditCard ? creditCardId || null : null;
       if (notes !== undefined) updateData.notes = notes?.trim() || null;
       updateData.is_credit_card = isCreditCard;
 
