@@ -1,4 +1,4 @@
-import { NewsletterData } from '../types/newsletter.types';
+import { NewsletterData, DailySummaryData } from '../types/newsletter.types';
 import { supabaseAdmin } from '../config/database';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,6 +14,7 @@ export class EmailService {
   private apiKey: string;
   private fromEmail: string;
   private newsletterTemplate: string;
+  private dailySummaryTemplate: string;
 
   constructor() {
     this.apiKey = process.env.RESEND_API_KEY || '';
@@ -23,13 +24,22 @@ export class EmailService {
       console.warn('⚠️  RESEND_API_KEY não configurada. Emails não serão enviados.');
     }
 
-    // Carregar template HTML
+    // Carregar template HTML de newsletter
     try {
       const templatePath = path.join(__dirname, '../../templates/newsletter-layout.html');
       this.newsletterTemplate = fs.readFileSync(templatePath, 'utf-8');
     } catch (error) {
       console.error('❌ Erro ao carregar template de newsletter:', error);
       this.newsletterTemplate = '';
+    }
+
+    // Carregar template HTML de resumo diário
+    try {
+      const templatePath = path.join(__dirname, '../../templates/daily-summary-layout.html');
+      this.dailySummaryTemplate = fs.readFileSync(templatePath, 'utf-8');
+    } catch (error) {
+      console.error('❌ Erro ao carregar template de resumo diário:', error);
+      this.dailySummaryTemplate = '';
     }
   }
 
@@ -454,5 +464,158 @@ export class EmailService {
       // Se não encontrar, retorna false (não enviou recentemente)
       return false;
     }
+  }
+
+  /**
+   * Envia email de resumo diário com transações vencendo organizadas por empresa
+   */
+  async sendDailySummary(
+    to: string,
+    data: DailySummaryData
+  ): Promise<{ success: boolean; messageId?: string; error?: any }> {
+    try {
+      if (!this.apiKey) {
+        console.log('📧 [MODO DEV] Resumo diário não enviado (sem API key):', {
+          to,
+          subject: data.emailSubject
+        });
+        return { success: true, messageId: 'dev-mode-skip' };
+      }
+
+      // Compilar template com dados
+      const html = this.compileDailySummaryTemplate(data);
+
+      // Fazer requisição para Resend API com retry
+      const result = await this.sendWithRetry({
+        from: this.fromEmail,
+        to: [to],
+        subject: data.emailSubject,
+        html
+      });
+
+      if (!result.success) {
+        console.error('❌ Erro ao enviar resumo diário via Resend:', result.error);
+        return { success: false, error: result.error };
+      }
+
+      console.log('✅ Resumo diário enviado com sucesso:', result.messageId);
+      
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error('❌ Erro ao enviar resumo diário:', error);
+      return { success: false, error };
+    }
+  }
+
+  /**
+   * Compila o template de resumo diário
+   */
+  private compileDailySummaryTemplate(data: DailySummaryData): string {
+    let html = this.dailySummaryTemplate;
+
+    // Substituir variáveis simples
+    html = html.replace(/{{userName}}/g, data.userName);
+    html = html.replace(/{{emailSubject}}/g, data.emailSubject);
+    html = html.replace(/{{totalReceivables}}/g, data.totalReceivables.toFixed(2));
+    html = html.replace(/{{totalPayables}}/g, data.totalPayables.toFixed(2));
+    html = html.replace(/{{unsubscribeUrl}}/g, data.unsubscribeUrl);
+
+    // Construir HTML das empresas usando apenas tables (compatível com email)
+    let companiesHtml = '';
+    
+    for (const company of data.companies) {
+      if (company.receivables.length === 0 && company.payables.length === 0) {
+        continue; // Pular empresas sem transações vencendo
+      }
+
+      companiesHtml += `
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;margin-bottom:20px;">
+          <tr>
+            <td style="padding:20px;">
+              <h3 style="color:#111827;margin:0 0 16px;font-size:18px;">🏢 ${company.name}</h3>
+              
+              ${company.receivables.length > 0 ? `
+                <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:${company.payables.length > 0 ? '16px' : '0'};">
+                  <tr>
+                    <td>
+                      <h4 style="color:#27ae60;margin:0 0 12px;font-size:15px;">💰 Contas a Receber (R$ ${company.totalReceivables.toFixed(2)})</h4>
+                    </td>
+                  </tr>
+                  ${company.receivables.map(tx => `
+                    <tr>
+                      <td style="border-bottom:1px solid #e5e7eb;padding:10px 0;">
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td style="vertical-align:top;">
+                              <strong style="color:#111827;font-size:14px;">${tx.description}</strong><br/>
+                              <span style="color:#6b7280;font-size:12px;">
+                                ${tx.daysUntilDue === 0 ? '⏰ Vence hoje' : 
+                                  tx.daysUntilDue < 0 ? `🔴 Vencida há ${Math.abs(tx.daysUntilDue)} dia(s)` :
+                                  `📅 Vence em ${tx.daysUntilDue} dia(s)`}
+                              </span>
+                            </td>
+                            <td style="text-align:right;vertical-align:top;white-space:nowrap;">
+                              <strong style="color:#27ae60;font-size:14px;">R$ ${tx.amount.toFixed(2)}</strong>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </table>
+              ` : ''}
+
+              ${company.payables.length > 0 ? `
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td>
+                      <h4 style="color:#e74c3c;margin:0 0 12px;font-size:15px;">💸 Contas a Pagar (R$ ${company.totalPayables.toFixed(2)})</h4>
+                    </td>
+                  </tr>
+                  ${company.payables.map(tx => `
+                    <tr>
+                      <td style="border-bottom:1px solid #e5e7eb;padding:10px 0;">
+                        <table width="100%" cellpadding="0" cellspacing="0">
+                          <tr>
+                            <td style="vertical-align:top;">
+                              <strong style="color:#111827;font-size:14px;">${tx.description}</strong><br/>
+                              <span style="color:#6b7280;font-size:12px;">
+                                ${tx.daysUntilDue === 0 ? '⏰ Vence hoje' : 
+                                  tx.daysUntilDue < 0 ? `🔴 Vencida há ${Math.abs(tx.daysUntilDue)} dia(s)` :
+                                  `📅 Vence em ${tx.daysUntilDue} dia(s)`}
+                              </span>
+                            </td>
+                            <td style="text-align:right;vertical-align:top;white-space:nowrap;">
+                              <strong style="color:#e74c3c;font-size:14px;">R$ ${tx.amount.toFixed(2)}</strong>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </table>
+              ` : ''}
+            </td>
+          </tr>
+        </table>
+      `;
+    }
+
+    // Se não houver empresas com transações, mostrar mensagem
+    if (companiesHtml === '') {
+      companiesHtml = `
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#e8f5e9;">
+          <tr>
+            <td style="padding:20px;text-align:center;">
+              <p style="color:#27ae60;margin:0;font-size:15px;">✅ Nenhuma transação vencendo nos próximos 7 dias!</p>
+            </td>
+          </tr>
+        </table>
+      `;
+    }
+
+    html = html.replace('{{companiesContent}}', companiesHtml);
+
+    return html;
   }
 }

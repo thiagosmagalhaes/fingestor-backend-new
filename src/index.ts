@@ -17,6 +17,7 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 import { startNotificationsCron } from './jobs/notifications.job';
 import { startWhatsAppJobs } from './jobs/whatsapp.job';
 import { startTrialExpiringJob } from './jobs/trial-expiring.job';
+import { startDailySummaryJob } from './jobs/daily-summary.job';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -87,6 +88,9 @@ app.listen(PORT, () => {
   
   // Iniciar cron job de trial expirando
   startTrialExpiringJob();
+  
+  // Iniciar cron job de resumo diário
+  startDailySummaryJob();
 });
 
 export default app;

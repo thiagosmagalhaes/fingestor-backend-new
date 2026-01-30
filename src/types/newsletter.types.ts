@@ -43,5 +43,35 @@ export enum NewsletterType {
   REMINDER = 'reminder',
   TRIAL_EXPIRING = 'trial_expiring',
   SUBSCRIPTION_CONFIRMED = 'subscription_confirmed',
+  DAILY_SUMMARY = 'daily_summary',
   CUSTOM = 'custom'
+}
+
+// Tipos para o email de resumo diário
+export interface TransactionSummary {
+  id: string;
+  description: string;
+  amount: number;
+  date: string;
+  status: string;
+  type: 'income' | 'expense';
+  daysUntilDue: number;
+}
+
+export interface CompanySummary {
+  id: string;
+  name: string;
+  receivables: TransactionSummary[];
+  payables: TransactionSummary[];
+  totalReceivables: number;
+  totalPayables: number;
+}
+
+export interface DailySummaryData {
+  emailSubject: string;
+  userName: string;
+  companies: CompanySummary[];
+  totalReceivables: number;
+  totalPayables: number;
+  unsubscribeUrl: string;
 }
