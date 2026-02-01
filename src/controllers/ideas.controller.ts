@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { supabase } from '../config/database';
+import { getSupabaseClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import sanitizeHtml from 'sanitize-html';
 
@@ -7,6 +7,7 @@ export const createIdea = async (req: AuthRequest, res: Response): Promise<Respo
     try {
         const { title, description } = req.body;
         const userId = req.user!.id;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         if (!title || !description) {
             return res.status(400).json({
@@ -53,6 +54,7 @@ export const getIdeas = async (req: AuthRequest, res: Response): Promise<Respons
     try {
         const userId = req.user!.id;
         const { status } = req.query;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         const { data, error } = await supabase
             .rpc('get_ideas_with_votes', {
@@ -80,6 +82,7 @@ export const getIdeaById = async (req: AuthRequest, res: Response): Promise<Resp
     try {
         const { id } = req.params;
         const userId = req.user!.id;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         const { data, error } = await supabase
             .rpc('get_idea_by_id', {
@@ -115,6 +118,7 @@ export const voteIdea = async (req: AuthRequest, res: Response): Promise<Respons
         const { id } = req.params;
         const { voteType } = req.body;
         const userId = req.user!.id;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         if (voteType !== 1 && voteType !== -1) {
             return res.status(400).json({
@@ -197,6 +201,7 @@ export const removeVote = async (req: AuthRequest, res: Response): Promise<Respo
     try {
         const { id } = req.params;
         const userId = req.user!.id;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         const { error } = await supabase
             .from('idea_votes')
@@ -224,6 +229,7 @@ export const updateIdeaStatus = async (req: AuthRequest, res: Response): Promise
     try {
         const { id } = req.params;
         const { status } = req.body;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         const validStatuses = ['pending', 'approved', 'in_progress', 'implemented', 'rejected'];
         if (!validStatuses.includes(status)) {
@@ -269,6 +275,7 @@ export const updateIdea = async (req: AuthRequest, res: Response): Promise<Respo
         const { id } = req.params;
         const { title, description } = req.body;
         const userId = req.user!.id;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         if (!title && !description) {
             return res.status(400).json({
@@ -344,6 +351,7 @@ export const deleteIdea = async (req: AuthRequest, res: Response): Promise<Respo
     try {
         const { id } = req.params;
         const userId = req.user!.id;
+        const supabase = getSupabaseClient(req.accessToken!);
 
         // Check if user owns the idea
         const { data: idea } = await supabase
