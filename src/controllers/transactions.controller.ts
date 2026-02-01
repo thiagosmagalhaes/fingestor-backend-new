@@ -20,6 +20,7 @@ interface CreateTransactionRequest {
   isCreditCard?: boolean;
   creditCardId?: string;
   notes?: string;
+  dueDate?: string; // ISO date
 }
 
 interface UpdateTransactionRequest {
@@ -36,6 +37,7 @@ interface UpdateTransactionRequest {
   creditCardId?: string;
   notes?: string;
   isCreditCard?: boolean;
+  dueDate?: string;
 }
 
 export class TransactionsController {
@@ -221,6 +223,7 @@ export class TransactionsController {
         isCreditCard,
         creditCardId,
         notes,
+        dueDate,
       } = req.body as CreateTransactionRequest;
 
       // Validações obrigatórias
@@ -323,6 +326,7 @@ export class TransactionsController {
         total_installments: totalInstallments || null,
         credit_card_id: isCreditCard ? creditCardId || null : null,
         is_credit_card: !!isCreditCard,
+        due_date: dueDate || null,
         notes: notes?.trim() || null,
       };
 
@@ -375,6 +379,7 @@ export class TransactionsController {
         creditCardId,
         notes,
         isCreditCard,
+        dueDate,
       } = req.body as UpdateTransactionRequest;
       const { companyId } = req.query;
 
@@ -466,6 +471,7 @@ export class TransactionsController {
       updateData.credit_card_id = isCreditCard ? creditCardId || null : null;
       if (notes !== undefined) updateData.notes = notes?.trim() || null;
       updateData.is_credit_card = isCreditCard;
+      if (dueDate !== undefined) updateData.due_date = dueDate;
 
       // Se não há nada para atualizar além do updated_at
       if (Object.keys(updateData).length === 1) {
