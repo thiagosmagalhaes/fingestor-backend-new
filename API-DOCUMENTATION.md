@@ -1,4 +1,4 @@
-# API Documentation - Caixa Mestra Backend
+# API Documentation - Fingestor Backend
 
 ## Base URL
 ```
@@ -64,7 +64,7 @@ Verifica se a API está online. **Não requer autenticação.**
 ```json
 {
   "status": "ok",
-  "message": "Caixa Mestra API is running"
+  "message": "Fingestor API is running"
 }
 ```
 

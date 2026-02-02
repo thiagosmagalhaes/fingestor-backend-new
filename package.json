@@ -1,7 +1,7 @@
 {
   "name": "caixa-mestra-backend",
   "version": "1.0.0",
-  "description": "Backend API for Caixa Mestra financial management system",
+  "description": "Backend API for Fingestor financial management system",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/index.ts",

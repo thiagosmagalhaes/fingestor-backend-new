@@ -39,7 +39,7 @@ app.set("trust proxy", 1);
 
 // Health check
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", message: "Caixa Mestra API is running" });
+  res.json({ status: "ok", message: "Fingestor API is running" });
 });
 
 // IMPORTANTE: Webhook do Stripe DEVE ser registrado ANTES do express.json()

@@ -15,6 +15,7 @@ export class EmailService {
   private fromEmail: string;
   private newsletterTemplate: string;
   private dailySummaryTemplate: string;
+  private supportTemplate: string;
 
   constructor() {
     this.apiKey = process.env.RESEND_API_KEY || '';
@@ -28,6 +29,7 @@ export class EmailService {
     try {
       const templatePath = path.join(__dirname, '../../templates/newsletter-layout.html');
       this.newsletterTemplate = fs.readFileSync(templatePath, 'utf-8');
+      this.newsletterTemplate = this.newsletterTemplate.replace(/{{year}}/g, new Date().getFullYear().toString());
     } catch (error) {
       console.error('❌ Erro ao carregar template de newsletter:', error);
       this.newsletterTemplate = '';
@@ -37,9 +39,20 @@ export class EmailService {
     try {
       const templatePath = path.join(__dirname, '../../templates/daily-summary-layout.html');
       this.dailySummaryTemplate = fs.readFileSync(templatePath, 'utf-8');
+      this.dailySummaryTemplate = this.dailySummaryTemplate.replace(/{{year}}/g, new Date().getFullYear().toString());
     } catch (error) {
       console.error('❌ Erro ao carregar template de resumo diário:', error);
       this.dailySummaryTemplate = '';
+    }
+
+    // Carregar template HTML de suporte
+    try {
+      const templatePath = path.join(__dirname, '../../templates/support.html');
+      this.supportTemplate = fs.readFileSync(templatePath, 'utf-8');
+      this.supportTemplate = this.supportTemplate.replace(/{{year}}/g, new Date().getFullYear().toString());
+    } catch (error) {
+      console.error('❌ Erro ao carregar template de suporte:', error);
+      this.supportTemplate = '';
     }
   }
 
@@ -617,5 +630,79 @@ export class EmailService {
     html = html.replace('{{companiesContent}}', companiesHtml);
 
     return html;
+  }
+
+  /**
+   * Envia notificação de nova resposta no ticket de suporte
+   */
+  async sendSupportTicketReply(
+    to: string,
+    ticketTitle: string,
+    ticketId: string,
+    userId: string
+  ): Promise<{ success: boolean; messageId?: string; error?: any }> {
+    try {
+      if (!this.apiKey) {
+        console.log('📧 [MODO DEV] Email de suporte não enviado (sem API key):', { to, ticketId });
+        return { success: true, messageId: 'dev-mode-skip' };
+      }
+
+      const subject = `Nova resposta no seu chamado: ${ticketTitle}`;
+      const frontendUrl = process.env.FRONTEND_URL;
+      const unsubscribeUrl = `${frontendUrl}/unsubscribe?user_id=${userId}`;
+
+      const content = `
+        <h2 style="color:#111827;margin:0 0 20px 0;font-size:20px;font-weight:600;">Nova Resposta no seu Chamado</h2>
+        <p style="color:#374151;line-height:1.6;margin:0 0 20px 0;font-size:15px;">
+          Olá! 👋
+        </p>
+        <p style="color:#374151;line-height:1.6;margin:0 0 20px 0;font-size:15px;">
+          Você recebeu uma nova resposta no seu chamado de suporte:
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6;border-radius:8px;margin:20px 0;">
+          <tr>
+            <td style="padding:20px;">
+              <p style="color:#111827;margin:0;font-size:16px;font-weight:600;">${ticketTitle}</p>
+              <p style="color:#6b7280;margin:10px 0 0 0;font-size:14px;">ID: #${ticketId.substring(0, 8)}</p>
+            </td>
+          </tr>
+        </table>
+        <p style="color:#374151;line-height:1.6;margin:20px 0;font-size:15px;">
+          Nossa equipe respondeu sua solicitação. Acesse o sistema para visualizar a resposta completa.
+        </p>
+        <table cellpadding="0" cellspacing="0" style="margin:30px 0;">
+          <tr>
+            <td style="background-color:#000000;border-radius:8px;padding:14px 28px;text-align:center;">
+              <a href="${frontendUrl}/help/support/${ticketId}" style="color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;display:inline-block;">
+                Ver Chamado
+              </a>
+            </td>
+          </tr>
+        </table>
+      `;
+
+      let html = this.supportTemplate
+        .replace('{{subject}}', subject)
+        .replace('{{content}}', content)
+        .replace('{{unsubscribeUrl}}', unsubscribeUrl);
+
+      const result = await this.sendWithRetry({
+        from: this.fromEmail,
+        to: [to],
+        subject,
+        html
+      });
+
+      if (!result.success) {
+        console.error('❌ Erro ao enviar email de notificação de suporte:', result.error);
+        return { success: false, error: result.error };
+      }
+
+      console.log('✅ Email de notificação de suporte enviado:', result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error('❌ Erro ao enviar email de notificação de suporte:', error);
+      return { success: false, error };
+    }
   }
 }

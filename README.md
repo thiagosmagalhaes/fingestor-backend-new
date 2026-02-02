@@ -1,6 +1,6 @@
-# Caixa Mestra - Backend API
+# Fingestor - Backend API
 
-Backend em Node.js + TypeScript + Express + Supabase para o sistema de gestão financeira Caixa Mestra.
+Backend em Node.js + TypeScript + Express + Supabase para o sistema de gestão financeira Fingestor.
 
 ## 🚀 Tecnologias
 
