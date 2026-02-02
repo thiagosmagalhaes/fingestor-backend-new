@@ -44,6 +44,11 @@ interface UpdateTransactionRequest {
   notes?: string;
   isCreditCard?: boolean;
   dueDate?: string;
+
+  // Recurring fields
+  isRecurring?: boolean;
+  recurringFrequency?: RecurringFrequency;
+  recurringEndDate?: string;
 }
 
 export class TransactionsController {
@@ -369,11 +374,9 @@ export class TransactionsController {
         .single();
 
       if (categoryError || !category) {
-        return res
-          .status(404)
-          .json({
-            error: "Categoria não encontrada ou não pertence a esta empresa",
-          });
+        return res.status(404).json({
+          error: "Categoria não encontrada ou não pertence a esta empresa",
+        });
       }
 
       // Verificar cartão de crédito se fornecido
@@ -386,12 +389,10 @@ export class TransactionsController {
           .single();
 
         if (cardError || !creditCard) {
-          return res
-            .status(404)
-            .json({
-              error:
-                "Cartão de crédito não encontrado ou não pertence a esta empresa",
-            });
+          return res.status(404).json({
+            error:
+              "Cartão de crédito não encontrado ou não pertence a esta empresa",
+          });
         }
       }
 
@@ -430,7 +431,7 @@ export class TransactionsController {
           ? parseInt(recurringFrequency)
           : 30;
         const installmentAmount = amount / totalInstallments;
-        
+
         for (let i = 1; i <= totalInstallments; i++) {
           // Calcular data da parcela (incrementa dias conforme frequência)
           const installmentDate = new Date(startDate);
@@ -562,6 +563,9 @@ export class TransactionsController {
         notes,
         isCreditCard,
         dueDate,
+        isRecurring,
+        recurringFrequency,
+        recurringEndDate,
       } = req.body as UpdateTransactionRequest;
       const { companyId } = req.query;
 
@@ -620,7 +624,89 @@ export class TransactionsController {
         }
       }
 
+      // Validações de recorrência
+      if (isRecurring) {
+        if (
+          !recurringFrequency ||
+          !["7", "15", "30"].includes(recurringFrequency)
+        ) {
+          return res.status(400).json({
+            error:
+              'Frequência de recorrência deve ser "7" (semanal), "15" (quinzenal) ou "30" (mensal)',
+          });
+        }
+      }
+
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
+
+      // Buscar a transação existente para validações
+      const { data: existingTransaction, error: fetchError } =
+        await supabaseClient
+          .from("transactions")
+          .select(
+            "id, is_installment, total_installments, is_credit_card, credit_card_id, recurring_transaction_id",
+          )
+          .eq("id", id)
+          .eq("company_id", companyId)
+          .single();
+
+      if (fetchError || !existingTransaction) {
+        return res.status(404).json({
+          error: "Transação não encontrada ou você não tem permissão",
+        });
+      }
+
+      // Validar regras de conversão para recorrente
+      if (isRecurring) {
+        // Não permite converter se já for recorrente
+        if (existingTransaction.recurring_transaction_id) {
+          return res.status(400).json({
+            error:
+              "Esta transação já é recorrente e não pode ser convertida novamente",
+          });
+        }
+
+        // Não permite converter se for parcela de parcelamento
+        if (
+          existingTransaction.is_installment &&
+          existingTransaction.total_installments &&
+          existingTransaction.total_installments > 1
+        ) {
+          return res.status(400).json({
+            error:
+              "Não é possível converter uma parcela de parcelamento em transação recorrente",
+          });
+        }
+
+        // Não permite converter se tiver cartão de crédito vinculado
+        if (
+          existingTransaction.is_credit_card ||
+          existingTransaction.credit_card_id
+        ) {
+          return res.status(400).json({
+            error:
+              "Não é possível converter uma transação com cartão de crédito em recorrente",
+          });
+        }
+      }
+
+      // Validar regras de cartão de crédito para transações recorrentes
+      if (
+        (isCreditCard || creditCardId) &&
+        existingTransaction.recurring_transaction_id
+      ) {
+        return res.status(400).json({
+          error:
+            "Não é possível vincular cartão de crédito a uma transação recorrente",
+        });
+      }
+
+      // Validar regras de parcelamento para transações recorrentes
+      if (isInstallment && existingTransaction.recurring_transaction_id) {
+        return res.status(400).json({
+          error: "Não é possível parcelar uma transação recorrente",
+        });
+      }
 
       // Verificar se categoria existe (se fornecida)
       if (categoryId) {
@@ -632,11 +718,9 @@ export class TransactionsController {
           .single();
 
         if (categoryError || !category) {
-          return res
-            .status(404)
-            .json({
-              error: "Categoria não encontrada ou não pertence a esta empresa",
-            });
+          return res.status(404).json({
+            error: "Categoria não encontrada ou não pertence a esta empresa",
+          });
         }
       }
 
@@ -650,12 +734,10 @@ export class TransactionsController {
           .single();
 
         if (cardError || !creditCard) {
-          return res
-            .status(404)
-            .json({
-              error:
-                "Cartão de crédito não encontrado ou não pertence a esta empresa",
-            });
+          return res.status(404).json({
+            error:
+              "Cartão de crédito não encontrado ou não pertence a esta empresa",
+          });
         }
       }
 
@@ -704,14 +786,71 @@ export class TransactionsController {
 
       if (error) {
         if (error.code === "PGRST116") {
-          return res
-            .status(404)
-            .json({
-              error: "Transação não encontrada ou você não tem permissão",
-            });
+          return res.status(404).json({
+            error: "Transação não encontrada ou você não tem permissão",
+          });
         }
         console.error("Error updating transaction:", error);
         throw error;
+      }
+
+      // Se estiver convertendo para recorrente, criar a regra de recorrência
+      if (isRecurring && recurringFrequency && transaction) {
+        try {
+          const recurringRule =
+            await recurringTransactionsService.createRecurringTransaction(
+              supabaseClient,
+              {
+                company_id: companyId,
+                category_id: transaction.category_id,
+                type: transaction.type,
+                description: transaction.description,
+                amount: transaction.amount,
+                frequency: recurringFrequency,
+                start_date: transaction.date,
+                end_date: recurringEndDate,
+                notes: transaction.notes,
+              },
+            );
+
+          // Atualizar a transação atual para vincular à regra recorrente
+          const { error: linkError } = await supabaseClient
+            .from("transactions")
+            .update({ recurring_transaction_id: recurringRule.id })
+            .eq("id", id);
+
+          if (linkError) {
+            console.error(
+              "Error linking transaction to recurring rule:",
+              linkError,
+            );
+          }
+
+          // Buscar a transação atualizada com a informação de recorrência
+          const { data: updatedTransaction } = await supabaseClient
+            .from("transactions")
+            .select(
+              `
+              *,
+              category:categories(id, name, type, color),
+              credit_card:credit_cards(id, name, brand),
+              recurring_transaction:recurring_transactions(id, description, frequency, start_date, end_date, is_active)
+            `,
+            )
+            .eq("id", id)
+            .single();
+
+          // apaga o registro atual
+          await supabaseClient.from("transactions").delete().eq("id", id);
+
+          return res.json(updatedTransaction || transaction);
+        } catch (recurringError) {
+          console.error("Error creating recurring rule:", recurringError);
+          return res.status(500).json({
+            error:
+              "Transação atualizada, mas falha ao criar regra de recorrência",
+          });
+        }
       }
 
       res.json(transaction);

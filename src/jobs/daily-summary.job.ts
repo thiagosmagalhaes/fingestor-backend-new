@@ -1,3 +1,4 @@
+import cron from 'node-cron';
 import { EmailService } from '../services/email.service';
 import { supabaseAdmin } from '../config/database';
 import { encryptUserIdWithIV } from '../utils/crypto.utils';
@@ -216,35 +217,14 @@ export async function sendDailySummaries() {
  * Executa todos os dias às 8h da manhã (horário local do servidor)
  */
 export function startDailySummaryJob() {
-  // Função para calcular o tempo até a próxima execução (8h)
-  const scheduleNextExecution = () => {
-    const now = new Date();
-    const nextRun = new Date();
-    
-    // Definir para 8h de hoje
-    nextRun.setHours(8, 0, 0, 0);
-    
-    // Se já passou das 8h hoje, agendar para amanhã
-    if (now >= nextRun) {
-      nextRun.setDate(nextRun.getDate() + 1);
-    }
-    
-    const timeUntilNextRun = nextRun.getTime() - now.getTime();
-    
-    console.log(`[DAILY SUMMARY] Próxima execução agendada para: ${nextRun.toLocaleString()}`);
-    
-    // Agendar a próxima execução
-    setTimeout(async () => {
-      console.log('[DAILY SUMMARY] Executando job agendado...');
-      await sendDailySummaries();
-      
-      // Agendar a próxima execução (24 horas depois)
-      scheduleNextExecution();
-    }, timeUntilNextRun);
-  };
-
-  // Iniciar o agendamento
-  scheduleNextExecution();
+  // Agendar execução diária às 8h usando cron
+  // Formato: segundo minuto hora dia mês dia-da-semana
+  cron.schedule('0 8 * * *', async () => {
+    console.log('[DAILY SUMMARY] Executando job agendado...');
+    await sendDailySummaries();
+  }, {
+    timezone: 'America/Sao_Paulo' // Ajuste o timezone conforme necessário
+  });
   
   console.log('✅ Job de resumo diário configurado (executa todos os dias às 8h)');
 }
