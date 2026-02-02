@@ -110,7 +110,7 @@ export class NotificationsController {
   async markAllAsRead(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { companyId } = req.query;
+      const { companyId } = req.params;
 
       if (!companyId || typeof companyId !== 'string') {
         return res.status(400).json({ error: 'companyId é obrigatório' });

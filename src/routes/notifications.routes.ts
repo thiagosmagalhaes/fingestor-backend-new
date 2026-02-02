@@ -10,13 +10,13 @@ router.use(authMiddleware);
 router.get('/', (req, res) => notificationsController.getNotifications(req, res));
 
 // Buscar contagem de não lidas
-router.get('/unread-count', (req, res) => notificationsController.getUnreadCount(req, res));
+router.get('/unread-count/:companyId', (req, res) => notificationsController.getUnreadCount(req, res));
 
 // Marcar como lida
 router.patch('/:id/read', (req, res) => notificationsController.markAsRead(req, res));
 
 // Marcar todas como lidas
-router.patch('/read-all', (req, res) => notificationsController.markAllAsRead(req, res));
+router.patch('/read-all/:companyId', (req, res) => notificationsController.markAllAsRead(req, res));
 
 // Deletar notificação
 router.delete('/:id', (req, res) => notificationsController.deleteNotification(req, res));
