@@ -8,6 +8,12 @@ const router = Router();
 // Aplicar autenticação em todas as rotas
 router.use(authMiddleware);
 
+// Rotas de recurring transactions (devem vir ANTES das rotas com :id)
+router.get('/recurring', (req, res) => transactionsController.getRecurringRules(req, res));
+router.patch('/recurring/:id/pause', (req, res) => transactionsController.pauseRecurringRule(req, res));
+router.patch('/recurring/:id/resume', (req, res) => transactionsController.resumeRecurringRule(req, res));
+router.delete('/recurring/:id', (req, res) => transactionsController.cancelRecurringRule(req, res));
+
 // Rotas de transactions
 router.get('/', (req, res) => transactionsController.getAll(req, res));
 router.get('/:id', (req, res) => transactionsController.getById(req, res));

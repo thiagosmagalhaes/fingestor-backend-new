@@ -19,6 +19,7 @@ import { startNotificationsCron } from "./jobs/notifications.job";
 import { startWhatsAppJobs } from "./jobs/whatsapp.job";
 import { startTrialExpiringJob } from "./jobs/trial-expiring.job";
 import { startDailySummaryJob } from "./jobs/daily-summary.job";
+import { startRecurringTransactionsJob } from "./jobs/recurring-transactions.job";
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -100,6 +101,9 @@ app.listen(PORT, () => {
 
     // Iniciar cron job de resumo diário
     startDailySummaryJob();
+    
+    // Iniciar cron job de transações recorrentes
+    startRecurringTransactionsJob();
   }
 });
 
