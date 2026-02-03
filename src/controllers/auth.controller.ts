@@ -1,7 +1,8 @@
-import { Request, Response } from 'express';
-import supabase from '../config/database';
-import { EmailService } from '../services/email.service';
-import { encryptUserIdWithIV } from '../utils/crypto.utils';
+import { Request, Response } from "express";
+import supabase, { getSupabaseClient, supabaseAdmin } from "../config/database";
+import { EmailService } from "../services/email.service";
+import { encryptUserIdWithIV } from "../utils/crypto.utils";
+import { AuthRequest } from "../middleware/auth";
 
 interface LoginRequest {
   email: string;
@@ -27,16 +28,16 @@ export class AuthController {
 
       // Validação de campos obrigatórios
       if (!email || !password) {
-        return res.status(400).json({ 
-          error: 'Email e senha são obrigatórios' 
+        return res.status(400).json({
+          error: "Email e senha são obrigatórios",
         });
       }
 
       // Validação de formato de email
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res.status(400).json({ 
-          error: 'Email inválido' 
+        return res.status(400).json({
+          error: "Email inválido",
         });
       }
 
@@ -47,23 +48,23 @@ export class AuthController {
       });
 
       if (error) {
-        console.error('Login error:', error);
-        
+        console.error("Login error:", error);
+
         // Tratar erros específicos do Supabase
-        if (error.message.includes('Invalid login credentials')) {
-          return res.status(401).json({ 
-            error: 'Email ou senha inválidos' 
-          });
-        }
-        
-        if (error.message.includes('Email not confirmed')) {
-          return res.status(401).json({ 
-            error: 'Email não confirmado. Verifique sua caixa de entrada.' 
+        if (error.message.includes("Invalid login credentials")) {
+          return res.status(401).json({
+            error: "Email ou senha inválidos",
           });
         }
 
-        return res.status(401).json({ 
-          error: error.message || 'Erro ao realizar login' 
+        if (error.message.includes("Email not confirmed")) {
+          return res.status(401).json({
+            error: "Email não confirmado. Verifique sua caixa de entrada.",
+          });
+        }
+
+        return res.status(401).json({
+          error: error.message || "Erro ao realizar login",
         });
       }
 
@@ -82,8 +83,8 @@ export class AuthController {
         },
       });
     } catch (error) {
-      console.error('Error in login:', error);
-      res.status(500).json({ error: 'Erro interno do servidor' });
+      console.error("Error in login:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
@@ -93,41 +94,42 @@ export class AuthController {
    */
   async register(req: Request, res: Response): Promise<Response | void> {
     try {
-      const { email, password, confirmPassword, fullName, phone } = req.body as RegisterRequest;
+      const { email, password, confirmPassword, fullName, phone } =
+        req.body as RegisterRequest;
 
       // Validação de campos obrigatórios
       if (!email || !password || !confirmPassword || !fullName || !phone) {
-        return res.status(400).json({ 
-          error: 'Todos os campos são obrigatórios' 
+        return res.status(400).json({
+          error: "Todos os campos são obrigatórios",
         });
       }
 
       // Validação de formato de email
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res.status(400).json({ 
-          error: 'Email inválido' 
+        return res.status(400).json({
+          error: "Email inválido",
         });
       }
 
       // Validação de senhas
       if (password !== confirmPassword) {
-        return res.status(400).json({ 
-          error: 'As senhas não coincidem' 
+        return res.status(400).json({
+          error: "As senhas não coincidem",
         });
       }
 
       // Validação de força da senha
       if (password.length < 6) {
-        return res.status(400).json({ 
-          error: 'A senha deve ter pelo menos 6 caracteres' 
+        return res.status(400).json({
+          error: "A senha deve ter pelo menos 6 caracteres",
         });
       }
 
       // Validação de nome completo
       if (fullName.trim().length < 3) {
-        return res.status(400).json({ 
-          error: 'Nome completo deve ter pelo menos 3 caracteres' 
+        return res.status(400).json({
+          error: "Nome completo deve ter pelo menos 3 caracteres",
         });
       }
 
@@ -139,29 +141,29 @@ export class AuthController {
         options: {
           data: {
             full_name: fullName.trim(),
-            phone: phone.replace(/\D/g, ''),
+            phone: phone.replace(/\D/g, ""),
           },
         },
       });
 
       if (error) {
-        console.error('Registration error:', error);
-        
+        console.error("Registration error:", error);
+
         // Tratar erros específicos do Supabase
-        if (error.message.includes('User already registered')) {
-          return res.status(409).json({ 
-            error: 'Email já cadastrado' 
+        if (error.message.includes("User already registered")) {
+          return res.status(409).json({
+            error: "Email já cadastrado",
           });
         }
 
-        if (error.message.includes('Password should be at least')) {
-          return res.status(400).json({ 
-            error: 'A senha não atende aos requisitos mínimos' 
+        if (error.message.includes("Password should be at least")) {
+          return res.status(400).json({
+            error: "A senha não atende aos requisitos mínimos",
           });
         }
 
-        return res.status(400).json({ 
-          error: error.message || 'Erro ao realizar cadastro' 
+        return res.status(400).json({
+          error: error.message || "Erro ao realizar cadastro",
         });
       }
 
@@ -172,20 +174,19 @@ export class AuthController {
       if (data.user?.email) {
         const emailService = new EmailService();
         const unsubscribeToken = encryptUserIdWithIV(data.user.id);
-        
-        emailService.sendWelcomeNewsletter(
-          data.user.email,
-          fullName,
-          unsubscribeToken
-        ).catch(error => {
-          console.error('Erro ao enviar newsletter de boas-vindas:', error);
-          // Não falha o cadastro se o email falhar
-        });
+
+        emailService
+          .sendWelcomeNewsletter(data.user.email, fullName, unsubscribeToken)
+          .catch((error) => {
+            console.error("Erro ao enviar newsletter de boas-vindas:", error);
+            // Não falha o cadastro se o email falhar
+          });
       }
 
       if (needsEmailConfirmation) {
         return res.status(201).json({
-          message: 'Cadastro realizado com sucesso! Verifique seu email para confirmar sua conta.',
+          message:
+            "Cadastro realizado com sucesso! Verifique seu email para confirmar sua conta.",
           user: {
             id: data.user?.id,
             email: data.user?.email,
@@ -197,7 +198,7 @@ export class AuthController {
 
       // Se não precisa confirmar email, retornar sessão
       res.status(201).json({
-        message: 'Cadastro realizado com sucesso!',
+        message: "Cadastro realizado com sucesso!",
         user: {
           id: data.user?.id,
           email: data.user?.email,
@@ -212,8 +213,8 @@ export class AuthController {
         emailConfirmationRequired: false,
       });
     } catch (error) {
-      console.error('Error in register:', error);
-      res.status(500).json({ error: 'Erro interno do servidor' });
+      console.error("Error in register:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
@@ -221,34 +222,26 @@ export class AuthController {
    * POST /api/auth/logout
    * Realiza logout do usuário
    */
-  async logout(req: Request, res: Response): Promise<Response | void> {
+  async logout(req: AuthRequest, res: Response): Promise<Response | void> {
     try {
-      const authHeader = req.headers.authorization;
-      
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ 
-          error: 'Token não fornecido' 
-        });
-      }
-
-      const token = authHeader.substring(7);
+      const token = req.accessToken!;
 
       // Realizar logout no Supabase
       const { error } = await supabase.auth.admin.signOut(token);
 
       if (error) {
-        console.error('Logout error:', error);
-        return res.status(400).json({ 
-          error: 'Erro ao realizar logout' 
+        console.error("Logout error:", error);
+        return res.status(400).json({
+          error: "Erro ao realizar logout",
         });
       }
 
-      res.json({ 
-        message: 'Logout realizado com sucesso' 
+      res.json({
+        message: "Logout realizado com sucesso",
       });
     } catch (error) {
-      console.error('Error in logout:', error);
-      res.status(500).json({ error: 'Erro interno do servidor' });
+      console.error("Error in logout:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
@@ -261,8 +254,8 @@ export class AuthController {
       const { refreshToken } = req.body;
 
       if (!refreshToken) {
-        return res.status(400).json({ 
-          error: 'Refresh token é obrigatório' 
+        return res.status(400).json({
+          error: "Refresh token é obrigatório",
         });
       }
 
@@ -272,9 +265,9 @@ export class AuthController {
       });
 
       if (error) {
-        console.error('Refresh token error:', error);
-        return res.status(401).json({ 
-          error: 'Refresh token inválido ou expirado' 
+        console.error("Refresh token error:", error);
+        return res.status(401).json({
+          error: "Refresh token inválido ou expirado",
         });
       }
 
@@ -287,8 +280,8 @@ export class AuthController {
         },
       });
     } catch (error) {
-      console.error('Error in refresh:', error);
-      res.status(500).json({ error: 'Erro interno do servidor' });
+      console.error("Error in refresh:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 
@@ -296,45 +289,181 @@ export class AuthController {
    * GET /api/auth/me
    * Retorna dados do usuário autenticado
    */
-  async me(req: Request, res: Response): Promise<Response | void> {
+  async me(req: AuthRequest, res: Response): Promise<Response | void> {
     try {
-      const authHeader = req.headers.authorization;
-      
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ 
-          error: 'Token não fornecido' 
-        });
-      }
+      const userId = req.user!.id;
+      const supabase = getSupabaseClient(req.accessToken!);
 
-      const token = authHeader.substring(7);
-
-      // Obter usuário pelo token
-      const { data: { user }, error } = await supabase.auth.getUser(token);
+      const { data: user, error } = await supabase
+        .from("profiles")
+        .select("user_id, email, full_name, phone, created_at, metadata")
+        .eq("user_id", userId)
+        .single();
 
       if (error) {
-        console.error('Get user error:', error);
-        return res.status(401).json({ 
-          error: 'Token inválido ou expirado' 
+        console.error("Get user error:", error);
+        return res.status(401).json({
+          error: "Token inválido ou expirado",
         });
       }
 
       if (!user) {
-        return res.status(401).json({ 
-          error: 'Usuário não encontrado' 
+        return res.status(401).json({
+          error: "Usuário não encontrado",
         });
       }
 
       res.json({
         user: {
-          id: user.id,
+          id: user.user_id,
           email: user.email,
-          fullName: user.user_metadata?.full_name,
+          fullName: user.full_name,
+          phone: user.phone,
           createdAt: user.created_at,
         },
       });
     } catch (error) {
-      console.error('Error in me:', error);
-      res.status(500).json({ error: 'Erro interno do servidor' });
+      console.error("Error in me:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  /**
+   * PUT /api/auth/profile
+   * Atualiza dados do usuário autenticado
+   */
+  async updateProfile(req: AuthRequest, res: Response): Promise<Response | void> {
+    try {
+      const supabase = getSupabaseClient(req.accessToken!);
+
+      const { fullName, email, phone } = req.body;
+
+      // Validar se pelo menos um campo foi enviado
+      if (!fullName && !email && !phone) {
+        return res.status(400).json({
+          error: "Pelo menos um campo deve ser informado para atualização",
+        });
+      }
+
+      // Validar email se fornecido
+      if (email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return res.status(400).json({
+            error: "Email inválido",
+          });
+        }
+      }
+
+      // Validar fullName se fornecido
+      if (fullName && fullName.trim().length < 2) {
+        return res.status(400).json({
+          error: "Nome deve ter pelo menos 2 caracteres",
+        });
+      }
+
+      // Validar phone se fornecido
+      if (phone && phone.trim().length < 10) {
+        return res.status(400).json({
+          error: "Telefone inválido",
+        });
+      }
+
+      // Obter usuário atual
+      const {
+        data: { user },
+        error: getUserError,
+      } = await supabase.auth.getUser(req.accessToken!);
+
+      if (getUserError || !user) {
+        return res.status(401).json({
+          error: "Token inválido ou expirado",
+        });
+      }
+
+      // Preparar dados para atualização
+      const updateData: any = {};
+      const metadataUpdates: any = {};
+
+      if (email && email !== user.email) {
+        updateData.email = email;
+      }
+
+      if (fullName) {
+        metadataUpdates.full_name = fullName.trim();
+      }
+
+      if (phone) {
+        metadataUpdates.phone = phone.trim();
+      }
+
+      // Atualizar metadata se houver
+      if (Object.keys(metadataUpdates).length > 0) {
+        updateData.data = {
+          ...user.user_metadata,
+          ...metadataUpdates,
+        };
+      }
+
+      // Atualizar usuário no Supabase Auth usando admin API
+      const { data: updatedAuthUser, error: updateAuthError } =
+        await supabaseAdmin.auth.admin.updateUserById(user.id, updateData);
+
+      if (updateAuthError) {
+        console.error("Update auth user error:", updateAuthError);
+
+        if (updateAuthError.message.includes("email already exists")) {
+          return res.status(400).json({
+            error: "Este email já está em uso",
+          });
+        }
+
+        return res.status(400).json({
+          error: updateAuthError.message || "Erro ao atualizar usuário",
+        });
+      }
+
+      // Atualizar tabela profiles se fullName, email ou phone foram alterados
+      if (fullName || email || phone) {
+        const profileUpdates: any = {
+          updated_at: new Date().toISOString(),
+        };
+
+        if (fullName) {
+          profileUpdates.full_name = fullName.trim();
+        }
+
+        if (email) {
+          profileUpdates.email = email;
+        }
+
+        if (phone) {
+          profileUpdates.phone = phone.replace(/\D/g, "");
+        }
+
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update(profileUpdates)
+          .eq("user_id", user.id);
+
+        if (profileError) {
+          console.error("Update profile error:", profileError);
+          // Não falhar a requisição, apenas logar o erro
+        }
+      }
+
+      res.json({
+        message: "Perfil atualizado com sucesso",
+        user: {
+          id: updatedAuthUser.user.id,
+          email: updatedAuthUser.user.email,
+          fullName: updatedAuthUser.user.user_metadata?.full_name,
+          phone: updatedAuthUser.user.user_metadata?.phone,
+        },
+      });
+    } catch (error) {
+      console.error("Error in updateProfile:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
 }
