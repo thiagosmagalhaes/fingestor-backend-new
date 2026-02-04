@@ -427,7 +427,17 @@ export class CreditCardsController {
 
       const isPaid = mappedTransactions.some((t: any) => t.invoicePaidAt !== undefined);
       const paidAt = mappedTransactions.find((t: any) => t.invoicePaidAt)?.invoicePaidAt;
-      const dueDate = cardData.invoiceDueDate ? new Date(cardData.invoiceDueDate + 'T00:00:00-03:00') : undefined;
+      let dueDate = cardData.invoiceDueDate ? new Date(cardData.invoiceDueDate + 'T00:00:00-03:00') : undefined;
+      
+      // Se a data de vencimento cair em sábado ou domingo, mover para a próxima segunda-feira
+      if (dueDate) {
+        const dayOfWeek = dueDate.getDay();
+        if (dayOfWeek === 0) { // Domingo
+          dueDate.setDate(dueDate.getDate() + 1);
+        } else if (dayOfWeek === 6) { // Sábado
+          dueDate.setDate(dueDate.getDate() + 2);
+        }
+      }
 
       res.json({
         transactions: mappedTransactions,
