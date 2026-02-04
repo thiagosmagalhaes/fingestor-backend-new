@@ -36,6 +36,8 @@ BEGIN
     JSON_BUILD_OBJECT(
       'creditCardId', card_data.credit_card_id,
       'creditCardName', card_data.credit_card_name,
+      'invoiceDueDate', card_data.invoice_due_date,
+      'invoiceClosingDate', card_data.invoice_closing_date,
       'transactions', card_data.transactions
     )
   )
@@ -44,6 +46,15 @@ BEGIN
     SELECT 
       cc.id AS credit_card_id,
       cc.name AS credit_card_name,
+      -- Calcular data de vencimento: se due_day <= closing_day, vence no mês seguinte
+      CASE 
+        WHEN cc.due_day <= cc.closing_day THEN 
+          (DATE_TRUNC('month', v_reference_date) + INTERVAL '1 month')::DATE + (cc.due_day - 1)
+        ELSE 
+          (DATE_TRUNC('month', v_reference_date))::DATE + (cc.due_day - 1)
+      END AS invoice_due_date,
+      -- Data de fechamento da fatura
+      (DATE_TRUNC('month', v_reference_date))::DATE + (cc.closing_day - 1) AS invoice_closing_date,
       COALESCE(
         JSON_AGG(
           JSON_BUILD_OBJECT(
@@ -90,7 +101,7 @@ BEGIN
     ) AS t ON true
     WHERE cc.company_id = p_company_id
       AND (p_credit_card_id IS NULL OR cc.id = p_credit_card_id)
-    GROUP BY cc.id, cc.name
+    GROUP BY cc.id, cc.name, cc.due_day, cc.closing_day
   ) AS card_data;
 
   RETURN COALESCE(v_result, '[]'::JSON);

@@ -427,6 +427,7 @@ export class CreditCardsController {
 
       const isPaid = mappedTransactions.some((t: any) => t.invoicePaidAt !== undefined);
       const paidAt = mappedTransactions.find((t: any) => t.invoicePaidAt)?.invoicePaidAt;
+      const dueDate = cardData.invoiceDueDate ? new Date(cardData.invoiceDueDate + 'T00:00:00-03:00') : undefined;
 
       res.json({
         transactions: mappedTransactions,
@@ -434,6 +435,7 @@ export class CreditCardsController {
           totalAmount,
           isPaid,
           paidAt,
+          dueDate
         },
       });
     } catch (error) {
