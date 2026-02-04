@@ -41,9 +41,17 @@ export interface CreditCardInvoice {
   creditCardId: string;
   creditCardName: string;
   currentAmount: number;
-  dueDate: string;
-  closingDate: string;
+  dueDate?: string;
+  closingDate?: string;
   isPaid: boolean;
+}
+
+export interface CreditCardInvoicesSummary {
+  totalAmount: number;
+  paidAmount: number;
+  cardCount: number;
+  transactionCount: number;
+  invoices: CreditCardInvoice[];
 }
 
 export interface SetupStatus {

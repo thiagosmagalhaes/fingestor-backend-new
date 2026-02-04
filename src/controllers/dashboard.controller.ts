@@ -1,6 +1,6 @@
-import { Request, Response } from 'express';
-import { getSupabaseClient } from '../config/database';
-import { AuthRequest } from '../middleware/auth';
+import { Request, Response } from "express";
+import { getSupabaseClient } from "../config/database";
+import { AuthRequest } from "../middleware/auth";
 import {
   DashboardSummary,
   OverdueData,
@@ -8,6 +8,7 @@ import {
   CategoryBreakdownItem,
   RecentTransactionItem,
   CreditCardInvoice,
+  CreditCardInvoicesSummary,
   CashFlowRPCResult,
   TransactionFromDB,
   SetupStatus,
@@ -15,8 +16,8 @@ import {
   DREMonthlyData,
   DREResponse,
   TransactionDateRange,
-} from '../types/dashboard.types';
- 
+} from "../types/dashboard.types";
+
 export class DashboardController {
   /**
    * GET /api/dashboard/summary
@@ -27,8 +28,8 @@ export class DashboardController {
       const authReq = req as AuthRequest;
       const { companyId } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       // Usar cliente autenticado para respeitar RLS
@@ -41,14 +42,17 @@ export class DashboardController {
       const lastDay = new Date(year, month + 1, 0).getDate();
       const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999);
 
-      const { data, error } = await supabaseClient.rpc('get_dashboard_summary', {
-        p_company_id: companyId,
-        p_start_date: startOfMonth.toISOString(),
-        p_end_date: endOfMonth.toISOString(),
-      });
+      const { data, error } = await supabaseClient.rpc(
+        "get_dashboard_summary",
+        {
+          p_company_id: companyId,
+          p_start_date: startOfMonth.toISOString(),
+          p_end_date: endOfMonth.toISOString(),
+        },
+      );
 
       if (error) {
-        console.error('Error calling get_dashboard_summary:', error);
+        console.error("Error calling get_dashboard_summary:", error);
         throw error;
       }
 
@@ -64,8 +68,8 @@ export class DashboardController {
 
       res.json(summary);
     } catch (error) {
-      console.error('Error in getSummary:', error);
-      res.status(500).json({ error: 'Erro ao buscar resumo do dashboard' });
+      console.error("Error in getSummary:", error);
+      res.status(500).json({ error: "Erro ao buscar resumo do dashboard" });
     }
   }
 
@@ -78,8 +82,8 @@ export class DashboardController {
       const authReq = req as AuthRequest;
       const { companyId } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       // Usar cliente autenticado para respeitar RLS
@@ -88,20 +92,23 @@ export class DashboardController {
       const now = new Date().toISOString();
 
       const { data: overdueTransactions, error } = await supabaseClient
-        .from('transactions')
-        .select('amount')
-        .eq('company_id', companyId)
-        .in('status', ['pending', 'scheduled'])
-        .eq('is_credit_card', false)
-        .lt('date', now);
+        .from("transactions")
+        .select("amount")
+        .eq("company_id", companyId)
+        .in("status", ["pending", "scheduled"])
+        .eq("is_credit_card", false)
+        .lt("date", now);
 
       if (error) {
-        console.error('Error fetching overdue transactions:', error);
+        console.error("Error fetching overdue transactions:", error);
         throw error;
       }
 
       const count = (overdueTransactions || []).length;
-      const total = (overdueTransactions || []).reduce((sum, t) => sum + Number(t.amount), 0);
+      const total = (overdueTransactions || []).reduce(
+        (sum, t) => sum + Number(t.amount),
+        0,
+      );
 
       const overdueData: OverdueData = {
         count,
@@ -110,8 +117,8 @@ export class DashboardController {
 
       res.json(overdueData);
     } catch (error) {
-      console.error('Error in getOverdue:', error);
-      res.status(500).json({ error: 'Erro ao buscar transações vencidas' });
+      console.error("Error in getOverdue:", error);
+      res.status(500).json({ error: "Erro ao buscar transações vencidas" });
     }
   }
 
@@ -122,10 +129,10 @@ export class DashboardController {
   async getCashFlow(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { companyId, months = '6' } = req.query;
+      const { companyId, months = "6" } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       // Usar cliente autenticado para respeitar RLS
@@ -133,28 +140,33 @@ export class DashboardController {
 
       const monthsCount = parseInt(months as string, 10) || 6;
 
-      const { data, error } = await supabaseClient.rpc('get_cash_flow_chart_data', {
-        p_company_id: companyId,
-        p_months: monthsCount,
-      });
+      const { data, error } = await supabaseClient.rpc(
+        "get_cash_flow_chart_data",
+        {
+          p_company_id: companyId,
+          p_months: monthsCount,
+        },
+      );
 
       if (error) {
-        console.error('Error calling get_cash_flow_chart_data:', error);
+        console.error("Error calling get_cash_flow_chart_data:", error);
         throw error;
       }
 
       // A função retorna: { month, month_full, receitas, despesas, saldo }
-      const cashFlowData: CashFlowData[] = (data || []).map((item: CashFlowRPCResult) => ({
-        date: item.month,
-        income: Number(item.receitas || 0),
-        expense: Number(item.despesas || 0),
-        balance: Number(item.saldo || 0),
-      }));
+      const cashFlowData: CashFlowData[] = (data || []).map(
+        (item: CashFlowRPCResult) => ({
+          date: item.month,
+          income: Number(item.receitas || 0),
+          expense: Number(item.despesas || 0),
+          balance: Number(item.saldo || 0),
+        }),
+      );
 
       res.json(cashFlowData);
     } catch (error) {
-      console.error('Error in getCashFlow:', error);
-      res.status(500).json({ error: 'Erro ao buscar fluxo de caixa' });
+      console.error("Error in getCashFlow:", error);
+      res.status(500).json({ error: "Erro ao buscar fluxo de caixa" });
     }
   }
 
@@ -162,13 +174,16 @@ export class DashboardController {
    * GET /api/dashboard/category-breakdown
    * Retorna breakdown por categoria com agregação de transações
    */
-  async getCategoryBreakdown(req: Request, res: Response): Promise<Response | void> {
+  async getCategoryBreakdown(
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
       const { companyId } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       // Usar cliente autenticado para respeitar RLS
@@ -180,42 +195,54 @@ export class DashboardController {
       const month = now.getMonth();
       const startOfMonth = new Date(year, month, 1).toISOString();
       const lastDay = new Date(year, month + 1, 0).getDate();
-      const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999).toISOString();
+      const endOfMonth = new Date(
+        year,
+        month,
+        lastDay,
+        23,
+        59,
+        59,
+        999,
+      ).toISOString();
 
       // 1. Buscar todas as categorias de despesa da empresa
       const { data: categories, error: categoriesError } = await supabaseClient
-        .from('categories')
-        .select('id, name, color')
-        .eq('company_id', companyId)
-        .eq('type', 'expense');
+        .from("categories")
+        .select("id, name, color")
+        .eq("company_id", companyId)
+        .eq("type", "expense");
 
       if (categoriesError) {
-        console.error('Error fetching categories:', categoriesError);
+        console.error("Error fetching categories:", categoriesError);
         throw categoriesError;
       }
 
       // 2. Buscar transações pagas do tipo expense do mês atual
-      const { data: transactions, error: transactionsError } = await supabaseClient
-        .from('transactions')
-        .select('amount, category_id')
-        .eq('company_id', companyId)
-        .eq('type', 'expense')
-        .eq('status', 'paid')
-        .gte('date', startOfMonth)
-        .lte('date', endOfMonth);
+      const { data: transactions, error: transactionsError } =
+        await supabaseClient
+          .from("transactions")
+          .select("amount, category_id")
+          .eq("company_id", companyId)
+          .eq("type", "expense")
+          .eq("status", "paid")
+          .gte("date", startOfMonth)
+          .lte("date", endOfMonth);
 
       if (transactionsError) {
-        console.error('Error fetching transactions:', transactionsError);
+        console.error("Error fetching transactions:", transactionsError);
         throw transactionsError;
       }
 
       // 3. Criar map de categorias com seus dados
-      const categoryMap = new Map<string, {
-        name: string;
-        color: string;
-        total: number;
-        count: number;
-      }>();
+      const categoryMap = new Map<
+        string,
+        {
+          name: string;
+          color: string;
+          total: number;
+          count: number;
+        }
+      >();
 
       // Inicializar todas as categorias com zero
       (categories || []).forEach((cat: any) => {
@@ -244,7 +271,7 @@ export class DashboardController {
 
       // 5. Converter para array e calcular percentuais (filtrar categorias sem transações)
       const allCategories = Array.from(categoryMap.values())
-        .filter(cat => cat.total > 0) // Apenas categorias com transações
+        .filter((cat) => cat.total > 0) // Apenas categorias com transações
         .sort((a, b) => b.total - a.total); // Ordenar por valor decrescente
 
       // Pegar as 5 maiores categorias
@@ -252,7 +279,7 @@ export class DashboardController {
       const others = allCategories.slice(5);
 
       // Agrupar o restante em "Outros"
-      const categoryBreakdown: CategoryBreakdownItem[] = top5.map(cat => ({
+      const categoryBreakdown: CategoryBreakdownItem[] = top5.map((cat) => ({
         name: cat.name,
         value: cat.total,
         color: cat.color,
@@ -266,9 +293,9 @@ export class DashboardController {
         const othersCount = others.reduce((sum, cat) => sum + cat.count, 0);
 
         categoryBreakdown.push({
-          name: 'Outros',
+          name: "Outros",
           value: othersTotal,
-          color: '#CCCCCC',
+          color: "#CCCCCC",
           percentage: grandTotal > 0 ? (othersTotal / grandTotal) * 100 : 0,
           transactionCount: othersCount,
         });
@@ -276,8 +303,8 @@ export class DashboardController {
 
       res.json(categoryBreakdown);
     } catch (error) {
-      console.error('Error in getCategoryBreakdown:', error);
-      res.status(500).json({ error: 'Erro ao buscar breakdown de categorias' });
+      console.error("Error in getCategoryBreakdown:", error);
+      res.status(500).json({ error: "Erro ao buscar breakdown de categorias" });
     }
   }
 
@@ -285,13 +312,16 @@ export class DashboardController {
    * GET /api/dashboard/recent-transactions
    * Retorna transações recentes com informações de cartões de crédito
    */
-  async getRecentTransactions(req: Request, res: Response): Promise<Response | void> {
+  async getRecentTransactions(
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { companyId, limit = '10' } = req.query;
+      const { companyId, limit = "10" } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       // Usar cliente autenticado para respeitar RLS
@@ -304,11 +334,20 @@ export class DashboardController {
       const month = now.getMonth();
       const startOfMonth = new Date(year, month, 1).toISOString();
       const lastDay = new Date(year, month + 1, 0).getDate();
-      const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999).toISOString();
+      const endOfMonth = new Date(
+        year,
+        month,
+        lastDay,
+        23,
+        59,
+        59,
+        999,
+      ).toISOString();
 
       const { data: transactions, error } = await supabaseClient
-        .from('transactions')
-        .select(`
+        .from("transactions")
+        .select(
+          `
           id,
           description,
           amount,
@@ -319,22 +358,25 @@ export class DashboardController {
           category_id,
           categories (name, color),
           credit_cards (name)
-        `)
-        .eq('company_id', companyId)
-        .order('date', { ascending: false })
-        .gte('date', startOfMonth)
-        .lte('date', endOfMonth)
-        .neq('is_credit_card', true)
+        `,
+        )
+        .eq("company_id", companyId)
+        .order("date", { ascending: false })
+        .gte("date", startOfMonth)
+        .lte("date", endOfMonth)
+        .neq("is_credit_card", true)
         .limit(limitCount);
 
       if (error) {
-        console.error('Error fetching recent transactions:', error);
+        console.error("Error fetching recent transactions:", error);
         throw error;
-      } 
+      }
 
-      const recentTransactions: RecentTransactionItem[] = (transactions || []).map((t: TransactionFromDB) => {
+      const recentTransactions: RecentTransactionItem[] = (
+        transactions || []
+      ).map((t: TransactionFromDB) => {
         // Determinar status baseado em status e date
-        const status  = t.status;
+        const status = t.status;
 
         // Extrair nome da categoria (pode vir como array ou objeto)
         const categoryName = t.categories
@@ -343,7 +385,7 @@ export class DashboardController {
             : t.categories.name
           : undefined;
 
-          const categoryColor = t.categories
+        const categoryColor = t.categories
           ? Array.isArray(t.categories)
             ? t.categories[0]?.color
             : t.categories.color
@@ -353,7 +395,7 @@ export class DashboardController {
           id: t.id,
           description: t.description,
           amount: Number(t.amount),
-          type: t.type as 'income' | 'expense',
+          type: t.type as "income" | "expense",
           status,
           dueDate: t.date,
           paidDate: t.paid_at || undefined,
@@ -365,30 +407,36 @@ export class DashboardController {
 
       res.json(recentTransactions);
     } catch (error) {
-      console.error('Error in getRecentTransactions:', error);
-      res.status(500).json({ error: 'Erro ao buscar transações recentes' });
+      console.error("Error in getRecentTransactions:", error);
+      res.status(500).json({ error: "Erro ao buscar transações recentes" });
     }
   }
 
   /**
    * GET /api/dashboard/credit-card-invoices
-   * Retorna faturas de cartão de crédito (pendente de implementação)
+   * Retorna resumo agregado das faturas de cartão de crédito do mês atual
    */
-  async getCreditCardInvoices(req: Request, res: Response): Promise<Response | void> {
+  async getCreditCardInvoices(
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> {
     try {
+      const authReq = req as AuthRequest;
       const { companyId } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
-      // TODO: Implementar faturas de cartão
-      const invoices: CreditCardInvoice[] = [];
+      const summary = await this.getCreditCardInvoicesData(
+        companyId,
+        authReq.accessToken!,
+      );
 
-      res.json(invoices);
+      res.json(summary);
     } catch (error) {
-      console.error('Error in getCreditCardInvoices:', error);
-      res.status(500).json({ error: 'Erro ao buscar faturas de cartão' });
+      console.error("Error in getCreditCardInvoices:", error);
+      res.status(500).json({ error: "Erro ao buscar faturas de cartão" });
     }
   }
 
@@ -396,13 +444,16 @@ export class DashboardController {
    * GET /api/dashboard/all
    * Retorna todos os dados do dashboard em uma única requisição
    */
-  async getAllDashboardData(req: Request, res: Response): Promise<Response | void> {
+  async getAllDashboardData(
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
       const { companyId } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       // Executar todas as consultas em paralelo
@@ -431,13 +482,16 @@ export class DashboardController {
         creditCardInvoices: creditCardInvoicesResult,
       });
     } catch (error) {
-      console.error('Error in getAllDashboardData:', error);
-      res.status(500).json({ error: 'Erro ao buscar dados do dashboard' });
+      console.error("Error in getAllDashboardData:", error);
+      res.status(500).json({ error: "Erro ao buscar dados do dashboard" });
     }
   }
 
   // Métodos auxiliares privados para reutilização
-  private async getSummaryData(companyId: string, accessToken: string): Promise<DashboardSummary> {
+  private async getSummaryData(
+    companyId: string,
+    accessToken: string,
+  ): Promise<DashboardSummary> {
     const supabaseClient = getSupabaseClient(accessToken);
     const now = new Date();
     const year = now.getFullYear();
@@ -446,7 +500,7 @@ export class DashboardController {
     const lastDay = new Date(year, month + 1, 0).getDate();
     const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999);
 
-    const { data } = await supabaseClient.rpc('get_dashboard_summary', {
+    const { data } = await supabaseClient.rpc("get_dashboard_summary", {
       p_company_id: companyId,
       p_start_date: startOfMonth.toISOString(),
       p_end_date: endOfMonth.toISOString(),
@@ -461,26 +515,35 @@ export class DashboardController {
     };
   }
 
-  private async getOverdueData(companyId: string, accessToken: string): Promise<OverdueData> {
+  private async getOverdueData(
+    companyId: string,
+    accessToken: string,
+  ): Promise<OverdueData> {
     const supabaseClient = getSupabaseClient(accessToken);
     const now = new Date().toISOString();
 
     const { data: overdueTransactions } = await supabaseClient
-      .from('transactions')
-      .select('amount')
-      .eq('company_id', companyId)
-      .in('status', ['pending', 'scheduled'])
-      .lt('date', now);
+      .from("transactions")
+      .select("amount")
+      .eq("company_id", companyId)
+      .in("status", ["pending", "scheduled"])
+      .lt("date", now);
 
     return {
       count: (overdueTransactions || []).length,
-      total: (overdueTransactions || []).reduce((sum, t) => sum + Number(t.amount), 0),
+      total: (overdueTransactions || []).reduce(
+        (sum, t) => sum + Number(t.amount),
+        0,
+      ),
     };
   }
 
-  private async getCashFlowData(companyId: string, accessToken: string): Promise<CashFlowData[]> {
+  private async getCashFlowData(
+    companyId: string,
+    accessToken: string,
+  ): Promise<CashFlowData[]> {
     const supabaseClient = getSupabaseClient(accessToken);
-    const { data } = await supabaseClient.rpc('get_cash_flow_chart_data', {
+    const { data } = await supabaseClient.rpc("get_cash_flow_chart_data", {
       p_company_id: companyId,
       p_months: 6,
     });
@@ -493,7 +556,10 @@ export class DashboardController {
     }));
   }
 
-  private async getCategoryBreakdownData(companyId: string, accessToken: string): Promise<CategoryBreakdownItem[]> {
+  private async getCategoryBreakdownData(
+    companyId: string,
+    accessToken: string,
+  ): Promise<CategoryBreakdownItem[]> {
     const supabaseClient = getSupabaseClient(accessToken);
 
     // Calcular data do mês atual
@@ -502,32 +568,43 @@ export class DashboardController {
     const month = now.getMonth();
     const startOfMonth = new Date(year, month, 1).toISOString();
     const lastDay = new Date(year, month + 1, 0).getDate();
-    const endOfMonth = new Date(year, month, lastDay, 23, 59, 59, 999).toISOString();
+    const endOfMonth = new Date(
+      year,
+      month,
+      lastDay,
+      23,
+      59,
+      59,
+      999,
+    ).toISOString();
 
     // 1. Buscar todas as categorias de despesa da empresa
     const { data: categories } = await supabaseClient
-      .from('categories')
-      .select('id, name, color')
-      .eq('company_id', companyId)
-      .eq('type', 'expense');
+      .from("categories")
+      .select("id, name, color")
+      .eq("company_id", companyId)
+      .eq("type", "expense");
 
     // 2. Buscar transações pagas do tipo expense do mês atual
     const { data: transactions } = await supabaseClient
-      .from('transactions')
-      .select('amount, category_id')
-      .eq('company_id', companyId)
-      .eq('type', 'expense')
-      .eq('status', 'paid')
-      .gte('date', startOfMonth)
-      .lte('date', endOfMonth);
+      .from("transactions")
+      .select("amount, category_id")
+      .eq("company_id", companyId)
+      .eq("type", "expense")
+      .eq("status", "paid")
+      .gte("date", startOfMonth)
+      .lte("date", endOfMonth);
 
     // 3. Criar map de categorias com seus dados
-    const categoryMap = new Map<string, {
-      name: string;
-      color: string;
-      total: number;
-      count: number;
-    }>();
+    const categoryMap = new Map<
+      string,
+      {
+        name: string;
+        color: string;
+        total: number;
+        count: number;
+      }
+    >();
 
     // Inicializar todas as categorias com zero
     (categories || []).forEach((cat: any) => {
@@ -556,7 +633,7 @@ export class DashboardController {
 
     // 5. Converter para array e calcular percentuais (filtrar categorias sem transações)
     const allCategories = Array.from(categoryMap.values())
-      .filter(cat => cat.total > 0) // Apenas categorias com transações
+      .filter((cat) => cat.total > 0) // Apenas categorias com transações
       .sort((a, b) => b.total - a.total); // Ordenar por valor decrescente
 
     // Pegar as 5 maiores categorias
@@ -564,7 +641,7 @@ export class DashboardController {
     const others = allCategories.slice(5);
 
     // Agrupar o restante em "Outros"
-    const result: CategoryBreakdownItem[] = top5.map(cat => ({
+    const result: CategoryBreakdownItem[] = top5.map((cat) => ({
       name: cat.name,
       value: cat.total,
       color: cat.color,
@@ -578,9 +655,9 @@ export class DashboardController {
       const othersCount = others.reduce((sum, cat) => sum + cat.count, 0);
 
       result.push({
-        name: 'Outros',
+        name: "Outros",
         value: othersTotal,
-        color: '#CCCCCC',
+        color: "#CCCCCC",
         percentage: grandTotal > 0 ? (othersTotal / grandTotal) * 100 : 0,
         transactionCount: othersCount,
       });
@@ -589,11 +666,15 @@ export class DashboardController {
     return result;
   }
 
-  private async getRecentTransactionsData(companyId: string, accessToken: string): Promise<RecentTransactionItem[]> {
+  private async getRecentTransactionsData(
+    companyId: string,
+    accessToken: string,
+  ): Promise<RecentTransactionItem[]> {
     const supabaseClient = getSupabaseClient(accessToken);
     const { data: transactions } = await supabaseClient
-      .from('transactions')
-      .select(`
+      .from("transactions")
+      .select(
+        `
         id,
         description,
         amount,
@@ -604,21 +685,22 @@ export class DashboardController {
         category_id,
         categories (name, color),
         credit_cards (name)
-      `)
-      .eq('company_id', companyId)
-      .order('date', { ascending: false })
+      `,
+      )
+      .eq("company_id", companyId)
+      .order("date", { ascending: false })
       .limit(10);
 
     return (transactions || []).map((t: any) => {
-      let status: 'paid' | 'pending' | 'overdue' | 'scheduled' = t.status;
-      if (t.status === 'paid') {
-        status = 'paid';
-      } else if (t.status === 'scheduled') {
-        status = 'scheduled';
+      let status: "paid" | "pending" | "overdue" | "scheduled" = t.status;
+      if (t.status === "paid") {
+        status = "paid";
+      } else if (t.status === "scheduled") {
+        status = "scheduled";
       } else if (new Date(t.date) < new Date()) {
-        status = 'overdue';
+        status = "overdue";
       } else {
-        status = 'pending';
+        status = "pending";
       }
 
       // Extrair nome da categoria (pode vir como array ou objeto)
@@ -638,7 +720,7 @@ export class DashboardController {
         id: t.id,
         description: t.description,
         amount: Number(t.amount),
-        type: t.type as 'income' | 'expense',
+        type: t.type as "income" | "expense",
         status,
         dueDate: t.date,
         paidDate: t.paid_at || undefined,
@@ -648,9 +730,96 @@ export class DashboardController {
     });
   }
 
-  private async getCreditCardInvoicesData(_companyId: string, _accessToken: string): Promise<CreditCardInvoice[]> {
-    // TODO: Implementar
-    return [];
+  private async getCreditCardInvoicesData(
+    companyId: string,
+    accessToken: string,
+  ): Promise<CreditCardInvoicesSummary> {
+    try {
+      const supabaseClient = getSupabaseClient(accessToken);
+
+      // Usar função RPC sem passar credit_card_id e reference_date
+      // A função vai usar data atual e buscar todos os cartões da empresa
+      const { data: statements, error: statementError } =
+        await supabaseClient.rpc("get_credit_card_statement", {
+          p_company_id: companyId,
+        });
+
+      if (statementError) {
+        console.error("Error fetching statements:", statementError);
+        throw statementError;
+      }
+
+      if (!statements || statements.length === 0) {
+        return {
+          totalAmount: 0,
+          paidAmount: 0,
+          cardCount: 0,
+          transactionCount: 0,
+          invoices: [],
+        };
+      }
+
+      const invoices: CreditCardInvoice[] = [];
+      let totalAmount = 0;
+      let paidAmount = 0;
+      let totalTransactionCount = 0;
+
+      // Processar resultado de cada cartão
+      for (const cardData of statements) {
+        if (!cardData || !cardData.transactions) {
+          continue;
+        }
+
+        const transactions = cardData.transactions || [];
+
+        // Calcular total do cartão (somar apenas expenses)
+        const cardAmount = transactions.reduce((sum: number, t: any) => {
+          if (t.type === "expense") {
+            return sum + Number(t.amount || 0);
+          } else {
+            return sum - Number(t.amount || 0);
+          }
+        }, 0);
+
+        // Verificar se alguma transação tem invoicePaidAt
+        const isPaid = transactions.some((t: any) => t.invoicePaidAt !== null);
+
+        const invoice = {
+          creditCardId: cardData.creditCardId,
+          creditCardName: cardData.creditCardName,
+          currentAmount: cardAmount,
+          dueDate: undefined, // Não temos mais no retorno
+          closingDate: undefined, // Não temos mais no retorno
+          isPaid,
+        };
+
+        invoices.push(invoice);
+
+        // Acumular totais
+        totalAmount += cardAmount;
+        if (isPaid) {
+          paidAmount += cardAmount;
+        }
+        totalTransactionCount += transactions.length;
+      }
+
+      return {
+        totalAmount: Number(totalAmount.toFixed(2)),
+        paidAmount: Number(paidAmount.toFixed(2)),
+        cardCount: statements.length,
+        transactionCount: totalTransactionCount,
+        invoices,
+      };
+    } catch (error) {
+      console.error("Error in getCreditCardInvoicesData:", error);
+      return {
+        totalAmount: 0,
+        paidAmount: 0,
+        cardCount: 0,
+        transactionCount: 0,
+        invoices: [],
+      };
+    }
   }
 
   /**
@@ -662,44 +831,55 @@ export class DashboardController {
   async getDRE(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { companyId, period = 'current', month, year } = req.query;
+      const { companyId, period = "current", month, year } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
-      if (period !== 'current' && period !== '12months') {
-        return res.status(400).json({ error: 'period deve ser "current" ou "12months"' });
+      if (period !== "current" && period !== "12months") {
+        return res
+          .status(400)
+          .json({ error: 'period deve ser "current" ou "12months"' });
       }
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
-      if (period === 'current') {
+      if (period === "current") {
         // DRE do mês especificado ou mês atual
         const now = new Date();
         let targetYear = now.getFullYear();
         let targetMonth = now.getMonth(); // 0-11
 
         // Se year foi fornecido, validar e usar
-        if (year && typeof year === 'string') {
+        if (year && typeof year === "string") {
           const yearNum = parseInt(year, 10);
           if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
-            return res.status(400).json({ error: 'year deve ser um ano válido (2000-2100)' });
+            return res
+              .status(400)
+              .json({ error: "year deve ser um ano válido (2000-2100)" });
           }
           targetYear = yearNum;
         }
 
         // Se month foi fornecido, validar e usar
-        if (month && typeof month === 'string') {
+        if (month && typeof month === "string") {
           const monthNum = parseInt(month, 10);
           if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-            return res.status(400).json({ error: 'month deve ser um número entre 1 e 12' });
+            return res
+              .status(400)
+              .json({ error: "month deve ser um número entre 1 e 12" });
           }
           targetMonth = monthNum - 1; // Converter para 0-11
         }
 
-        const dreData = await this.calculateDRE(supabaseClient, companyId, targetMonth + 1, targetYear); // targetMonth + 1 porque JS usa 0-11
-        
+        const dreData = await this.calculateDRE(
+          supabaseClient,
+          companyId,
+          targetMonth + 1,
+          targetYear,
+        ); // targetMonth + 1 porque JS usa 0-11
+
         const response: DREResponse = {
           current: dreData,
         };
@@ -715,11 +895,17 @@ export class DashboardController {
           const year = date.getFullYear();
           const month = date.getMonth() + 1; // Converter para 1-12
 
-          const dreData = await this.calculateDRE(supabaseClient, companyId, month, year);
-          
+          const dreData = await this.calculateDRE(
+            supabaseClient,
+            companyId,
+            month,
+            year,
+          );
+
           const monthStr = date.toISOString().substring(0, 7); // YYYY-MM
-          const monthName = date.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
-            .replace('.', '')
+          const monthName = date
+            .toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
+            .replace(".", "")
             .replace(/^\w/, (c) => c.toUpperCase()); // Capitalizar primeira letra
 
           monthlyData.push({
@@ -736,8 +922,8 @@ export class DashboardController {
         return res.json(response);
       }
     } catch (error) {
-      console.error('Error in getDRE:', error);
-      res.status(500).json({ error: 'Erro ao buscar dados do DRE' });
+      console.error("Error in getDRE:", error);
+      res.status(500).json({ error: "Erro ao buscar dados do DRE" });
     }
   }
 
@@ -748,16 +934,16 @@ export class DashboardController {
     supabaseClient: any,
     companyId: string,
     month: number,
-    year: number
+    year: number,
   ): Promise<DREData> {
-    const { data, error } = await supabaseClient.rpc('get_dre_data', {
+    const { data, error } = await supabaseClient.rpc("get_dre_data", {
       p_company_id: companyId,
       p_month: month,
       p_year: year,
     });
 
     if (error) {
-      console.error('Error calling get_dre_data:', error);
+      console.error("Error calling get_dre_data:", error);
       throw error;
     }
 
@@ -777,13 +963,16 @@ export class DashboardController {
    * GET /api/dashboard/transaction-date-range?companyId=xxx
    * Retorna o mês/ano da primeira e última transação da empresa
    */
-  async getTransactionDateRange(req: Request, res: Response): Promise<Response | void> {
+  async getTransactionDateRange(
+    req: Request,
+    res: Response,
+  ): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
       const { companyId } = req.query;
 
-      if (!companyId || typeof companyId !== 'string') {
-        return res.status(400).json({ error: 'companyId é obrigatório' });
+      if (!companyId || typeof companyId !== "string") {
+        return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
@@ -792,28 +981,28 @@ export class DashboardController {
       const [firstResult, lastResult] = await Promise.all([
         // Primeira transação (mais antiga)
         supabaseClient
-          .from('transactions')
-          .select('date')
-          .eq('company_id', companyId)
-          .order('date', { ascending: true })
+          .from("transactions")
+          .select("date")
+          .eq("company_id", companyId)
+          .order("date", { ascending: true })
           .limit(1),
-        
+
         // Última transação (mais recente)
         supabaseClient
-          .from('transactions')
-          .select('date')
-          .eq('company_id', companyId)
-          .order('date', { ascending: false })
+          .from("transactions")
+          .select("date")
+          .eq("company_id", companyId)
+          .order("date", { ascending: false })
           .limit(1),
       ]);
 
       if (firstResult.error) {
-        console.error('Error fetching first transaction:', firstResult.error);
+        console.error("Error fetching first transaction:", firstResult.error);
         throw firstResult.error;
       }
 
       if (lastResult.error) {
-        console.error('Error fetching last transaction:', lastResult.error);
+        console.error("Error fetching last transaction:", lastResult.error);
         throw lastResult.error;
       }
 
@@ -844,8 +1033,8 @@ export class DashboardController {
 
       res.json(response);
     } catch (error) {
-      console.error('Error in getTransactionDateRange:', error);
-      res.status(500).json({ error: 'Erro ao buscar período de transações' });
+      console.error("Error in getTransactionDateRange:", error);
+      res.status(500).json({ error: "Erro ao buscar período de transações" });
     }
   }
 
@@ -866,13 +1055,13 @@ export class DashboardController {
 
       // Primeiro: verificar se usuário tem pelo menos 1 company
       const { data: companies, error: companyError } = await supabaseClient
-        .from('companies')
-        .select('id')
-        .eq('id', companyId)
+        .from("companies")
+        .select("id")
+        .eq("id", companyId)
         .limit(1);
 
       if (companyError) {
-        console.error('Error checking companies:', companyError);
+        console.error("Error checking companies:", companyError);
         throw companyError;
       }
 
@@ -889,54 +1078,57 @@ export class DashboardController {
         return res.json(setupStatus);
       }
 
-
       // Executar todas as verificações em paralelo para otimizar performance
-      const [categoriesCheck, creditCardsCheck, transactionsCheck] = await Promise.all([
-        // Verifica se existe pelo menos 1 categoria
-        supabaseClient
-          .from('categories')
-          .select('id', { count: 'exact', head: false })
-          .eq('company_id', companyId)
-          .limit(1),
-        
-        // Verifica se existe pelo menos 1 cartão de crédito
-        supabaseClient
-          .from('credit_cards')
-          .select('id', { count: 'exact', head: false })
-          .eq('company_id', companyId)
-          .limit(1),
-        
-        // Verifica se existe pelo menos 1 transação
-        supabaseClient
-          .from('transactions')
-          .select('id', { count: 'exact', head: false })
-          .eq('company_id', companyId)
-          .limit(1),
-      ]);
+      const [categoriesCheck, creditCardsCheck, transactionsCheck] =
+        await Promise.all([
+          // Verifica se existe pelo menos 1 categoria
+          supabaseClient
+            .from("categories")
+            .select("id", { count: "exact", head: false })
+            .eq("company_id", companyId)
+            .limit(1),
+
+          // Verifica se existe pelo menos 1 cartão de crédito
+          supabaseClient
+            .from("credit_cards")
+            .select("id", { count: "exact", head: false })
+            .eq("company_id", companyId)
+            .limit(1),
+
+          // Verifica se existe pelo menos 1 transação
+          supabaseClient
+            .from("transactions")
+            .select("id", { count: "exact", head: false })
+            .eq("company_id", companyId)
+            .limit(1),
+        ]);
 
       // Verificar erros individuais
       if (categoriesCheck.error) {
-        console.error('Error checking categories:', categoriesCheck.error);
+        console.error("Error checking categories:", categoriesCheck.error);
       }
       if (creditCardsCheck.error) {
-        console.error('Error checking credit cards:', creditCardsCheck.error);
+        console.error("Error checking credit cards:", creditCardsCheck.error);
       }
       if (transactionsCheck.error) {
-        console.error('Error checking transactions:', transactionsCheck.error);
+        console.error("Error checking transactions:", transactionsCheck.error);
       }
 
       // Montar resposta com status de cada feature
       const setupStatus: SetupStatus = {
         hasCompany: true,
-        hasCategories: !categoriesCheck.error && (categoriesCheck.data?.length ?? 0) > 0,
-        hasCreditCards: !creditCardsCheck.error && (creditCardsCheck.data?.length ?? 0) > 0,
-        hasTransactions: !transactionsCheck.error && (transactionsCheck.data?.length ?? 0) > 0,
+        hasCategories:
+          !categoriesCheck.error && (categoriesCheck.data?.length ?? 0) > 0,
+        hasCreditCards:
+          !creditCardsCheck.error && (creditCardsCheck.data?.length ?? 0) > 0,
+        hasTransactions:
+          !transactionsCheck.error && (transactionsCheck.data?.length ?? 0) > 0,
       };
 
       res.json(setupStatus);
     } catch (error) {
-      console.error('Error in getSetupStatus:', error);
-      res.status(500).json({ error: 'Erro ao buscar status de configuração' });
+      console.error("Error in getSetupStatus:", error);
+      res.status(500).json({ error: "Erro ao buscar status de configuração" });
     }
   }
 }

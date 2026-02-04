@@ -368,111 +368,70 @@ export class CreditCardsController {
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
-      // Buscar o cartão de crédito
-      const { data: creditCard, error: cardError } = await supabaseClient
-        .from('credit_cards')
-        .select('*')
-        .eq('id', id)
-        .eq('company_id', companyId)
-        .single();
+      // Usar função RPC para calcular o extrato
+      const { data, error } = await supabaseClient.rpc('get_credit_card_statement', {
+        p_company_id: companyId,
+        p_credit_card_id: id,
+        p_reference_date: referenceDate,
+      });
 
-      if (cardError || !creditCard) {
+      if (error) {
+        console.error('Error calling get_credit_card_statement:', error);
+        if (error.message?.includes('não encontrado') || error.message?.includes('não tem permissão')) {
+          return res.status(404).json({ error: 'Cartão de crédito não encontrado' });
+        }
+        throw error;
+      }
+
+      // A função retorna array de cartões, pegar o primeiro (único quando passa id)
+      const cardData = data && data.length > 0 ? data[0] : null;
+      
+      if (!cardData) {
         return res.status(404).json({ error: 'Cartão de crédito não encontrado' });
       }
 
-      // Calcular o período da fatura
-      // Parsear a data manualmente para evitar problemas de timezone
-      const [yearStr, monthStr] = referenceDate.split('-');
-      const year = parseInt(yearStr, 10);
-      const month = parseInt(monthStr, 10) - 1; // JavaScript usa 0-11 para meses
+      const transactions = cardData.transactions || [];
 
-      // Data de fechamento do mês de referência
-      const closingDate = new Date(year, month, creditCard.closing_day);
-      
-      // Data de fechamento do mês anterior
-      const previousMonth = month === 0 ? 11 : month - 1;
-      const previousYear = month === 0 ? year - 1 : year;
-      const previousClosingDate = new Date(previousYear, previousMonth, creditCard.closing_day);
-
-      // Período de compras: dia seguinte ao fechamento anterior até fechamento atual
-      const periodStart = new Date(previousClosingDate);
-      periodStart.setDate(periodStart.getDate());
-      
-      // Data de vencimento
-      let dueDate = new Date(year, month, creditCard.due_day);
-      
-      // Se vencimento é antes do fechamento, vencimento é no mês seguinte
-      if (creditCard.due_day <= creditCard.closing_day) {
-        dueDate.setMonth(dueDate.getMonth() + 1);
-      }
-
-      // Formatar datas para query (YYYY-MM-DD) - ajustar para timezone local
-      const formatDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-
-      const startDateStr = formatDate(periodStart);
-      const endDateStr = formatDate(closingDate);
-
-      // Buscar transações do cartão no período
-      const { data: transactions, error: txError } = await supabaseClient
-        .from('transactions')
-        .select('*')
-        .eq('credit_card_id', id)
-        .gte('date', startDateStr)
-        .lte('date', endDateStr)
-        .order('date', { ascending: false });
-
-      if (txError) {
-        console.error('Error fetching transactions:', txError);
-        throw txError;
-      }
-
-      // Calcular total (despesas positivas, receitas negativas)
-      const totalAmount = (transactions || []).reduce((sum, tx) => {
-        const amount = Number(tx.amount);
-        // Despesas (compras) somam, receitas (estornos) subtraem
-        return tx.type === 'expense' ? sum + amount : sum - amount;
-      }, 0);
-
-      // Verificar se a fatura foi paga (invoice_paid_at preenchido em qualquer transação)
-      const paidTransaction = (transactions || []).find(tx => tx.status === 'paid');
-      const isPaid = !!paidTransaction;
-      const paidAt = paidTransaction?.invoice_paid_at || null;
-
-      // Mapear transações para o formato correto
-      const mappedTransactions = (transactions || []).map((t: any) => ({
+      // Mapear transações para o formato correto com Date objects
+      const mappedTransactions = transactions.map((t: any) => ({
         id: t.id,
         description: t.description,
-        amount: t.type === 'expense' ? -Number(t.amount) : Number(t.amount),
+        amount: Number(t.amount),
         type: t.type as 'income' | 'expense',
-        categoryId: t.category_id || '',
-        companyId: t.company_id,
+        categoryId: t.categoryId || '',
+        companyId: t.companyId,
         date: new Date(t.date + 'T00:00:00-03:00'),
-        dueDate: t.due_date ? new Date(t.due_date + 'T00:00:00-03:00') : undefined,
-        paidAt: t.paid_at ? new Date(t.paid_at) : undefined,
-        paymentDate: t.payment_date ? new Date(t.payment_date) : undefined,
+        dueDate: t.dueDate ? new Date(t.dueDate + 'T00:00:00-03:00') : undefined,
+        paidAt: t.paidAt ? new Date(t.paidAt) : undefined,
+        paymentDate: t.paymentDate ? new Date(t.paymentDate) : undefined,
         status: t.status as 'pending' | 'paid' | 'scheduled',
-        isInstallment: t.is_installment,
-        installmentNumber: t.installment_number || undefined,
-        totalInstallments: t.total_installments || undefined,
-        isCreditCard: t.is_credit_card,
-        creditCardId: t.credit_card_id || undefined,
+        isInstallment: t.isInstallment,
+        installmentNumber: t.installmentNumber || undefined,
+        totalInstallments: t.totalInstallments || undefined,
+        isCreditCard: t.isCreditCard,
+        creditCardId: t.creditCardId || undefined,
         creditCardName: undefined,
         notes: t.notes || undefined,
-        invoicePaidAt: t.invoice_paid_at ? new Date(t.invoice_paid_at) : undefined,
-        createdAt: new Date(t.created_at),
+        invoicePaidAt: t.invoicePaidAt ? new Date(t.invoicePaidAt) : undefined,
+        createdAt: new Date(t.createdAt),
       }));
+
+      // Calcular informações da fatura
+      const totalAmount = mappedTransactions.reduce((sum: number, t: any) => {
+        if (t.type === 'expense') {
+          return sum + t.amount;
+        } else {
+          return sum - t.amount;
+        } 
+      }, 0);
+
+      const isPaid = mappedTransactions.some((t: any) => t.invoicePaidAt !== undefined);
+      const paidAt = mappedTransactions.find((t: any) => t.invoicePaidAt)?.invoicePaidAt;
 
       res.json({
         transactions: mappedTransactions,
         invoice: {
-          totalAmount: Number(totalAmount.toFixed(2)),
-          closingDate: closingDate.toISOString().split('T')[0],
-          dueDate: dueDate.toISOString().split('T')[0],
+          totalAmount,
           isPaid,
           paidAt,
         },
@@ -511,10 +470,10 @@ export class CreditCardsController {
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
-      // Buscar o cartão de crédito
+      // Verificar se o cartão existe e pertence à empresa
       const { data: creditCard, error: cardError } = await supabaseClient
         .from('credit_cards')
-        .select('*')
+        .select('id')
         .eq('id', id)
         .eq('company_id', companyId)
         .single();
@@ -523,77 +482,31 @@ export class CreditCardsController {
         return res.status(404).json({ error: 'Cartão de crédito não encontrado' });
       }
 
-      // Calcular o período da fatura (mesma lógica do getStatement)
-      const [yearStr, monthStr] = referenceDate.split('-');
-      const year = parseInt(yearStr, 10);
-      const month = parseInt(monthStr, 10) - 1;
+      // Usar funções RPC do Supabase
+      const rpcFunction = isPaid ? 'pay_credit_card_invoice' : 'reopen_credit_card_invoice';
+      
+      const { data: affectedRows, error: rpcError } = await supabaseClient.rpc(rpcFunction, {
+        p_credit_card_id: id,
+        p_invoice_month: referenceDate,
+      });
 
-      const closingDate = new Date(year, month, creditCard.closing_day);
-      const previousMonth = month === 0 ? 11 : month - 1;
-      const previousYear = month === 0 ? year - 1 : year;
-      const previousClosingDate = new Date(previousYear, previousMonth, creditCard.closing_day);
-
-      const periodStart = new Date(previousClosingDate);
-      periodStart.setDate(periodStart.getDate() + 1);
-
-      const formatDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-
-      const startDateStr = formatDate(periodStart);
-      const endDateStr = formatDate(closingDate);
-
-      // Buscar IDs das transações do período
-      const { data: transactions, error: txError } = await supabaseClient
-        .from('transactions')
-        .select('id')
-        .eq('credit_card_id', id)
-        .gte('date', startDateStr)
-        .lte('date', endDateStr);
-
-      if (txError) {
-        console.error('Error fetching transactions:', txError);
-        throw txError;
+      if (rpcError) {
+        console.error(`Error calling ${rpcFunction}:`, rpcError);
+        throw rpcError;
       }
 
-      if (!transactions || transactions.length === 0) {
-        return res.status(404).json({ error: 'Nenhuma transação encontrada neste período' });
-      }
-
-      const transactionIds = transactions.map(t => t.id);
-
-      // Atualizar transações
-      const updateData: any = {
-        updated_at: new Date().toISOString(),
-      };
-
-      if (isPaid) {
-        // Pagar fatura: setar invoice_paid_at com timestamp atual
-        updateData.invoice_paid_at = new Date().toISOString();
-        updateData.status = 'paid';
-      } else {
-        // Despagar fatura: remover invoice_paid_at e voltar para pending
-        updateData.invoice_paid_at = null;
-        updateData.status = 'pending';
-      }
-
-      const { error: updateError } = await supabaseClient
-        .from('transactions')
-        .update(updateData)
-        .in('id', transactionIds);
-
-      if (updateError) {
-        console.error('Error updating transactions:', updateError);
-        throw updateError;
+      if (affectedRows === 0) {
+        return res.status(404).json({ 
+          error: isPaid 
+            ? 'Nenhuma transação pendente encontrada neste período' 
+            : 'Nenhuma transação paga encontrada neste período' 
+        });
       }
 
       res.json({
         message: isPaid ? 'Fatura paga com sucesso' : 'Fatura marcada como em aberto',
-        updatedCount: transactionIds.length,
-        paidAt: isPaid ? updateData.invoice_paid_at : null,
+        updatedCount: affectedRows,
+        paidAt: isPaid ? new Date().toISOString() : null,
       });
     } catch (error) {
       console.error('Error in payInvoice:', error);
