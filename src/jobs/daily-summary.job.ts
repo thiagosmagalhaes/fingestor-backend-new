@@ -3,6 +3,7 @@ import { EmailService } from '../services/email.service';
 import { supabaseAdmin } from '../config/database';
 import { encryptUserIdWithIV } from '../utils/crypto.utils';
 import { CompanySummary, TransactionSummary } from '../types/newsletter.types';
+import { TRIAL_DAYS } from '../controllers/subscriptions.controller';
 
 const emailService = new EmailService();
 
@@ -14,23 +15,72 @@ export async function sendDailySummaries() {
   console.log('[DAILY SUMMARY] Iniciando envio de resumos diários...');
   
   try {
-    // Buscar todos os usuários com assinatura ativa
-    const { data: subscriptions, error: subError } = await supabaseAdmin
+    const fifteenDaysAgo = new Date();
+    fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - TRIAL_DAYS);
+    
+    // 1. Buscar usuários em trial (criados há menos de 15 dias, sem subscription)
+    const { data: trialUsers, error: trialError } = await supabaseAdmin
+      .from('profiles')
+      .select('user_id, email, full_name, created_at')
+      .gte('created_at', fifteenDaysAgo.toISOString())
+      .order('created_at', { ascending: false });
+
+    if (trialError) {
+      console.error('[ERRO] Erro ao buscar usuários trial:', trialError);
+    }
+
+    // 2. Buscar usuários com subscriptions ativas
+    const { data: paidSubscriptions, error: subError } = await supabaseAdmin
       .from('subscriptions')
-      .select('user_id, status, profiles:user_id(email, full_name)')
+      .select('user_id, status')
       .in('status', ['active', 'trialing']);
 
     if (subError) {
       console.error('[ERRO] Erro ao buscar assinaturas:', subError);
+    }
+
+    // 3. Buscar perfis dos usuários pagos
+    const paidUserIds = (paidSubscriptions || []).map(s => s.user_id);
+    const { data: paidProfiles, error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .select('user_id, email, full_name')
+      .in('user_id', paidUserIds);
+
+    if (profileError) {
+      console.error('[ERRO] Erro ao buscar perfis pagos:', profileError);
+    }
+
+    // Combinar usuários trial e pagos (evitando duplicatas)
+    const allUsers = new Map();
+    
+    // Adicionar usuários trial
+    (trialUsers || []).forEach(user => {
+      allUsers.set(user.user_id, {
+        user_id: user.user_id,
+        email: user.email,
+        full_name: user.full_name,
+        type: 'trial'
+      });
+    });
+    
+    // Adicionar usuários pagos (sobrescreve trial se existir)
+    (paidProfiles || []).forEach(profile => {
+      allUsers.set(profile.user_id, {
+        user_id: profile.user_id,
+        email: profile.email,
+        full_name: profile.full_name,
+        type: 'paid'
+      });
+    });
+
+    const users = Array.from(allUsers.values());
+
+    if (users.length === 0) {
+      console.log('[INFO] Nenhum usuário ativo encontrado');
       return;
     }
 
-    if (!subscriptions || subscriptions.length === 0) {
-      console.log('[INFO] Nenhuma assinatura ativa encontrada');
-      return;
-    }
-
-    console.log(`[INFO] Encontrados ${subscriptions.length} usuário(s) com assinatura ativa`);
+    console.log(`[INFO] Encontrados ${users.length} usuário(s) ativos (trial + pagos)`);
 
     // Definir período: próximos 7 dias
     const today = new Date();
@@ -44,21 +94,17 @@ export async function sendDailySummaries() {
     let skippedCount = 0;
 
     // Processar cada usuário
-    for (const subscription of subscriptions) {
+    for (const user of users) {
       try {
-        const userId = subscription.user_id;
-        const userProfile = Array.isArray(subscription.profiles) 
-          ? subscription.profiles[0] 
-          : subscription.profiles;
-        
-        if (!userProfile || !userProfile.email) {
-          console.log(`[SKIP] Usuário ${userId} sem perfil ou email`);
+        const userId = user.user_id;
+        const userEmail = user.email;
+        const userName = user.full_name || 'Usuário';
+
+        if (!userEmail) {
+          console.log(`[SKIP] Usuário ${userId} sem email`);
           skippedCount++;
           continue;
         }
-
-        const userEmail = userProfile.email;
-        const userName = userProfile.full_name || 'Usuário';
 
         // Verificar se já enviou resumo nas últimas 20 horas (evita duplicatas)
         const hasRecent = await emailService.hasRecentNewsletter(
@@ -77,8 +123,7 @@ export async function sendDailySummaries() {
         const { data: companies, error: companiesError } = await supabaseAdmin
           .from('companies')
           .select('id, name')
-          .eq('user_id', userId)
-          .eq('is_active', true);
+          .eq('user_id', userId);
 
         if (companiesError || !companies || companies.length === 0) {
           console.log(`[SKIP] ${userEmail} - sem empresas ativas`);
@@ -201,7 +246,7 @@ export async function sendDailySummaries() {
     }
 
     console.log('[DAILY SUMMARY] Finalizado:', {
-      total: subscriptions.length,
+      total: users.length,
       sucesso: successCount,
       erros: errorCount,
       pulados: skippedCount

@@ -19,6 +19,8 @@ const PRICE_IDS = {
 
 type PlanType = keyof typeof PRICE_IDS;
 
+export const TRIAL_DAYS = 15;
+
 /**
  * Criar sessão de checkout do Stripe
  */
@@ -305,10 +307,10 @@ export const getSubscriptionStatus = async (
     }
 
     // Não tem assinatura - verificar período de trial de 15 dias
-    if (daysSinceCreation < 15) {
-      const trialDaysRemaining = 15 - daysSinceCreation;
+    if (daysSinceCreation < TRIAL_DAYS) {
+      const trialDaysRemaining = TRIAL_DAYS - daysSinceCreation;
       const trialEndDate = new Date(userCreatedAt);
-      trialEndDate.setDate(trialEndDate.getDate() + 15);
+      trialEndDate.setDate(trialEndDate.getDate() + TRIAL_DAYS);
 
       return res.status(200).json({
         id: null,
@@ -325,7 +327,7 @@ export const getSubscriptionStatus = async (
 
     // Trial expirado
     const trialEndDate = new Date(userCreatedAt);
-    trialEndDate.setDate(trialEndDate.getDate() + 15);
+    trialEndDate.setDate(trialEndDate.getDate() + TRIAL_DAYS);
 
     return res.status(200).json({
       id: null,
