@@ -21,6 +21,8 @@ export class RecurringTransactionsService {
       start_date: string;
       end_date?: string;
       notes?: string;
+      credit_card_id?: string | null;
+      is_credit_card?: boolean;
     }
   ): Promise<RecurringTransaction> {
     // Calculate end_date if not provided (1 year from start)
@@ -44,7 +46,9 @@ export class RecurringTransactionsService {
         is_active: true,
         last_generated_date: null,
         next_generation_date: data.start_date,
-        notes: data.notes
+        notes: data.notes,
+        credit_card_id: data.credit_card_id || null,
+        is_credit_card: data.is_credit_card || false
       })
       .select()
       .single();
@@ -106,7 +110,8 @@ export class RecurringTransactionsService {
         notes: recurringRule.notes,
         recurring_transaction_id: recurringRule.id,
         is_installment: false,
-        is_credit_card: false
+        is_credit_card: recurringRule.is_credit_card || false,
+        credit_card_id: recurringRule.credit_card_id || null
       });
 
       // Incrementar data conforme frequência

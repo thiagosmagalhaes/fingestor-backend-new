@@ -322,6 +322,8 @@ export class TransactionsController {
               "Não é possível criar uma transação recorrente e parcelada ao mesmo tempo",
           });
         }
+        
+        // Transações recorrentes podem ter cartão de crédito vinculado
       }
 
       // Validações de parcelamento
@@ -411,6 +413,8 @@ export class TransactionsController {
               start_date: date,
               end_date: recurringEndDate,
               notes: notes?.trim(),
+              credit_card_id: isCreditCard ? creditCardId || null : null,
+              is_credit_card: !!isCreditCard,
             },
           );
 
@@ -666,27 +670,7 @@ export class TransactionsController {
           });
         }
 
-        // Não permite converter se tiver cartão de crédito vinculado
-        if (
-          existingTransaction.is_credit_card ||
-          existingTransaction.credit_card_id
-        ) {
-          return res.status(400).json({
-            error:
-              "Não é possível converter uma transação com cartão de crédito em recorrente",
-          });
-        }
-      }
-
-      // Validar regras de cartão de crédito para transações recorrentes
-      if (
-        (isCreditCard || creditCardId) &&
-        existingTransaction.recurring_transaction_id
-      ) {
-        return res.status(400).json({
-          error:
-            "Não é possível vincular cartão de crédito a uma transação recorrente",
-        });
+        // Transações recorrentes PODEM ter cartão de crédito vinculado
       }
 
       // Validar regras de parcelamento para transações recorrentes
@@ -798,6 +782,8 @@ export class TransactionsController {
                 start_date: transaction.date,
                 end_date: recurringEndDate,
                 notes: transaction.notes,
+                credit_card_id: transaction.credit_card_id,
+                is_credit_card: transaction.is_credit_card,
               },
             );
 

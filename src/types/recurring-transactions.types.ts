@@ -20,6 +20,8 @@ export interface RecurringTransaction {
   last_generated_date?: string; // ISO date
   next_generation_date?: string; // ISO date
   notes?: string;
+  credit_card_id?: string;
+  is_credit_card?: boolean;
   created_at: string;
   updated_at: string;
 }
