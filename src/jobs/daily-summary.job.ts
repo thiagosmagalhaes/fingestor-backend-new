@@ -17,7 +17,7 @@ export async function sendDailySummaries() {
     // Buscar todos os usuários com assinatura ativa
     const { data: subscriptions, error: subError } = await supabaseAdmin
       .from('subscriptions')
-      .select('user_id, profiles!inner(email, full_name)')
+      .select('user_id, status, profiles:user_id(email, full_name)')
       .in('status', ['active', 'trialing']);
 
     if (subError) {

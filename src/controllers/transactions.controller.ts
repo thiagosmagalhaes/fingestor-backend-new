@@ -610,20 +610,6 @@ export class TransactionsController {
           .json({ error: 'Status deve ser "paid", "pending" ou "scheduled"' });
       }
 
-      if (isInstallment !== undefined && isInstallment) {
-        if (installmentNumber !== undefined && installmentNumber < 1) {
-          return res
-            .status(400)
-            .json({ error: "Número da parcela deve ser maior que zero" });
-        }
-
-        if (totalInstallments !== undefined && totalInstallments < 2) {
-          return res
-            .status(400)
-            .json({ error: "Total de parcelas deve ser pelo menos 2" });
-        }
-      }
-
       // Validações de recorrência
       if (isRecurring) {
         if (
