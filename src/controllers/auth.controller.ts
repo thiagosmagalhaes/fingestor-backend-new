@@ -466,6 +466,120 @@ export class AuthController {
       res.status(500).json({ error: "Erro interno do servidor" });
     }
   }
+
+  /**
+   * POST /api/auth/forgot-password
+   * Envia email para recuperação de senha
+   */
+  async forgotPassword(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const { email } = req.body;
+
+      // Validação de campo obrigatório
+      if (!email) {
+        return res.status(400).json({
+          error: "Email é obrigatório",
+        });
+      }
+
+      // Validação de formato de email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          error: "Email inválido",
+        });
+      }
+
+      // Enviar email de recuperação usando Supabase Auth
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
+      });
+
+      if (error) {
+        console.error("Forgot password error:", error);
+        // Não revelar se o email existe ou não por segurança
+        // Sempre retornar sucesso
+      }
+
+      // Sempre retornar sucesso para não revelar se o email existe
+      res.json({
+        message: "Se o email existir em nossa base, você receberá instruções para recuperação de senha",
+      });
+    } catch (error) {
+      console.error("Error in forgotPassword:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
+
+  /**
+   * POST /api/auth/reset-password
+   * Redefine a senha do usuário usando o token recebido por email
+   */
+  async resetPassword(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const { password, confirmPassword } = req.body;
+
+      // Validação de campos obrigatórios
+      if (!password || !confirmPassword) {
+        return res.status(400).json({
+          error: "Senha e confirmação são obrigatórias",
+        });
+      }
+
+      // Validar se as senhas coincidem
+      if (password !== confirmPassword) {
+        return res.status(400).json({
+          error: "As senhas não coincidem",
+        });
+      }
+
+      // Validar comprimento mínimo da senha
+      if (password.length < 6) {
+        return res.status(400).json({
+          error: "A senha deve ter no mínimo 6 caracteres",
+        });
+      }
+
+      // Obter o token do header de autorização
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          error: "Token de recuperação não fornecido",
+        });
+      }
+
+      const token = authHeader.substring(7);
+
+      // Criar cliente Supabase com o token
+      const supabaseClient = getSupabaseClient(token);
+
+      // Atualizar senha usando o token
+      const { error } = await supabaseClient.auth.updateUser({
+        password: password,
+      });
+
+      if (error) {
+        console.error("Reset password error:", error);
+
+        if (error.message.includes('expired') || error.message.includes('invalid')) {
+          return res.status(400).json({
+            error: "Token de recuperação inválido ou expirado. Solicite um novo link.",
+          });
+        }
+
+        return res.status(400).json({
+          error: error.message || "Erro ao redefinir senha",
+        });
+      }
+
+      res.json({
+        message: "Senha redefinida com sucesso",
+      });
+    } catch (error) {
+      console.error("Error in resetPassword:", error);
+      res.status(500).json({ error: "Erro interno do servidor" });
+    }
+  }
 }
 
 export default new AuthController();

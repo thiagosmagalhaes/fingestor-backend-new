@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { getSupabaseClient } from '../config/database';
 import { AuthRequest } from './auth';
+import { TRIAL_DAYS } from '../controllers/subscriptions.controller';
 
 /**
  * Middleware para verificar se o usuário tem assinatura ativa ou trial válido
@@ -61,7 +62,7 @@ export const requireActiveSubscription = async (
     }
 
     // Não tem assinatura - verificar período de trial de 15 dias
-    if (daysSinceCreation < 15) {
+    if (daysSinceCreation < TRIAL_DAYS) {
       // Trial ainda válido, permitir acesso
       return next();
     }

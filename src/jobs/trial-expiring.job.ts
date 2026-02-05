@@ -1,6 +1,7 @@
 import { EmailService } from '../services/email.service';
 import { supabaseAdmin } from '../config/database';
 import { encryptUserIdWithIV } from '../utils/crypto.utils';
+import { TRIAL_DAYS } from '../controllers/subscriptions.controller';
 
 const emailService = new EmailService();
 
@@ -90,7 +91,7 @@ export async function checkTrialExpiring() {
         // Calcular dias restantes exatos
         const userCreatedAt = new Date(user.created_at);
         const trialEndsAt = new Date(userCreatedAt);
-        trialEndsAt.setDate(trialEndsAt.getDate() + 15);
+        trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
         
         const now = new Date();
         const daysRemaining = Math.ceil((trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
