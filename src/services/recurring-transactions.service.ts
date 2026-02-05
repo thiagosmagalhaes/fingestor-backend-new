@@ -76,7 +76,14 @@ export class RecurringTransactionsService {
 
     const transactions = [];
     let currentDate = new Date(lastGenerated);
-    currentDate.setDate(currentDate.getDate() + frequencyDays);
+    
+    // Incrementar data conforme frequência
+    if (frequencyDays === 30) {
+      // Para mensal, incrementa o mês mantendo o mesmo dia
+      currentDate.setMonth(currentDate.getMonth() + 1);
+    } else {
+      currentDate.setDate(currentDate.getDate() + frequencyDays);
+    }
 
     // If this is the first generation, start from start_date
     if (!recurringRule.last_generated_date) {
@@ -102,7 +109,13 @@ export class RecurringTransactionsService {
         is_credit_card: false
       });
 
-      currentDate.setDate(currentDate.getDate() + frequencyDays);
+      // Incrementar data conforme frequência
+      if (frequencyDays === 30) {
+        // Para mensal, incrementa o mês mantendo o mesmo dia
+        currentDate.setMonth(currentDate.getMonth() + 1);
+      } else {
+        currentDate.setDate(currentDate.getDate() + frequencyDays);
+      }
       count++;
     }
 
@@ -122,7 +135,14 @@ export class RecurringTransactionsService {
     // Update recurring rule with last_generated_date and next_generation_date
     const lastTransactionDate = transactions[transactions.length - 1].date;
     const nextDate = new Date(lastTransactionDate);
-    nextDate.setDate(nextDate.getDate() + frequencyDays);
+    
+    // Incrementar data conforme frequência
+    if (frequencyDays === 30) {
+      // Para mensal, incrementa o mês mantendo o mesmo dia
+      nextDate.setMonth(nextDate.getMonth() + 1);
+    } else {
+      nextDate.setDate(nextDate.getDate() + frequencyDays);
+    }
 
     await supabase
       .from('recurring_transactions')

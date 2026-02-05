@@ -433,11 +433,13 @@ export class TransactionsController {
         const installmentAmount = amount / totalInstallments;
 
         for (let i = 1; i <= totalInstallments; i++) {
-          // Calcular data da parcela (incrementa dias conforme frequência)
+          // Calcular data da parcela
           const installmentDate = new Date(startDate);
-          installmentDate.setDate(
-            startDate.getDate() + frequencyDays * (i - 1),
-          );
+          if (frequencyDays === 30) {
+            installmentDate.setMonth(startDate.getMonth() + (i - 1));
+          } else {
+            installmentDate.setDate(startDate.getDate() + frequencyDays * (i - 1));
+          }
 
           // Primeira parcela mantém o status informado, demais são 'scheduled'
           const installmentStatus = i === 1 ? status : "scheduled";
