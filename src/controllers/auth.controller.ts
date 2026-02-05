@@ -550,13 +550,20 @@ export class AuthController {
 
       const token = authHeader.substring(7);
 
-      // Criar cliente Supabase com o token
-      const supabaseClient = getSupabaseClient(token);
+      // Verificar se o token é válido obtendo o usuário
+      const { data: userData, error: userError } = await supabase.auth.getUser(token);
 
-      // Atualizar senha usando o token
-      const { error } = await supabaseClient.auth.updateUser({
-        password: password,
-      });
+      if (userError || !userData.user) {
+        return res.status(400).json({
+          error: "Token de recuperação inválido ou expirado. Solicite um novo link.",
+        });
+      }
+
+      // Atualizar senha usando Admin API
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(
+        userData.user.id,
+        { password: password }
+      );
 
       if (error) {
         console.error("Reset password error:", error);
