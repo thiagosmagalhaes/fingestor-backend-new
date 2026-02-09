@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getSupabaseClient } from '../config/database';
+import { getSupabaseClient, supabaseAdmin } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import {
   CreateBudgetRequest,
@@ -555,6 +555,93 @@ export class BudgetsController {
     } catch (error) {
       console.error('Error in getStatusHistory:', error);
       res.status(500).json({ error: 'Erro ao buscar histórico' });
+    }
+  }
+
+  /**
+   * GET /public/budgets/:shareToken
+   * Endpoint público para acessar orçamento por share token
+   * Não requer autenticação
+   */
+  async getByShareToken(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const { shareToken } = req.params;
+
+      if (!shareToken) {
+        return res.status(400).json({ error: 'Share token é obrigatório' });
+      }
+
+      const { data: budget, error } = await supabaseAdmin
+        .from('budgets')
+        .select(`
+          id,
+          budget_number,
+          customer_name,
+          customer_email,
+          customer_phone,
+          subtotal,
+          discount_amount,
+          discount_percentage,
+          tax_amount,
+          total_amount,
+          status,
+          issue_date,
+          expiry_date,
+          notes,
+          terms,
+          created_at,
+          budget_items (
+            id,
+            item_type,
+            product_service_id,
+            name,
+            sku,
+            description,
+            quantity,
+            unit_price,
+            discount_amount,
+            discount_percentage,
+            tax_percentage,
+            total_amount,
+            sort_order
+          ),
+          companies!inner (
+            id,
+            name,
+            cnpj
+          )
+        `)
+        .eq('share_token', shareToken)
+        .is('deleted_at', null)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return res.status(404).json({ error: 'Orçamento não encontrado' });
+        }
+        console.error('Error fetching public budget:', error);
+        throw error;
+      }
+
+      // Verificar se o orçamento está expirado
+      let isExpired = false;
+      if (budget.expiry_date) {
+        const expiryDate = new Date(budget.expiry_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (expiryDate < today) {
+          isExpired = true;
+        }
+      }
+
+      res.json({
+        ...budget,
+        is_expired: isExpired
+      });
+    } catch (error) {
+      console.error('Error in getByShareToken:', error);
+      res.status(500).json({ error: 'Erro ao buscar orçamento público' });
     }
   }
 }

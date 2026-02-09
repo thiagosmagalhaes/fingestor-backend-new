@@ -231,6 +231,87 @@ curl -X GET "https://api.fingestor.com/api/customers/uuid-cliente/interactions?c
 
 ## 3. Orçamentos
 
+### 3.0. Obter Orçamento Público (Sem Autenticação)
+
+**Endpoint:** `GET /public/budgets/:shareToken`
+
+Este endpoint público permite que clientes acessem orçamentos compartilhados sem necessidade de autenticação. Cada orçamento possui um `share_token` único que é gerado automaticamente na criação.
+
+**Parâmetros de URL:**
+- `shareToken` (obrigatório): Token único de compartilhamento do orçamento
+
+**Exemplo de Requisição:**
+
+```bash
+curl -X GET "https://api.fingestor.com/public/budgets/abc123def456..."
+```
+
+**Resposta de Sucesso (200):**
+
+```json
+{
+  "id": "uuid-orcamento",
+  "budget_number": "ORC-2026-00001",
+  "customer_name": "João Silva",
+  "customer_email": "joao@email.com",
+  "customer_phone": "(11) 98765-4321",
+  "subtotal": 5000.00,
+  "discount_amount": 500.00,
+  "discount_percentage": 10.00,
+  "tax_amount": 0.00,
+  "total_amount": 4500.00,
+  "status": "sent",
+  "issue_date": "2026-02-07",
+  "expiry_date": "2026-02-22",
+  "notes": "Orçamento para sistema de segurança",
+  "terms": "Pagamento em 30 dias",
+  "created_at": "2026-02-07T10:00:00Z",
+  "is_expired": false,
+  "budget_items": [
+    {
+      "id": "uuid-item",
+      "item_type": "product",
+      "product_service_id": "uuid-produto",
+      "name": "Câmera IP 5MP",
+      "sku": "CAM-001",
+      "description": "Câmera IP de alta resolução",
+      "quantity": 2,
+      "unit_price": 2500.00,
+      "discount_amount": 0,
+      "discount_percentage": 0,
+      "tax_percentage": 0,
+      "total_amount": 5000.00,
+      "sort_order": 0
+    }
+  ],
+  "companies": {
+    "id": "uuid-empresa",
+    "name": "Empresa ABC",
+    "cnpj": "12.345.678/0001-90"
+  }
+}
+```
+
+**Notas:**
+- Este endpoint **não requer autenticação** (token Bearer)
+- O `share_token` é gerado automaticamente ao criar um orçamento
+- O campo `is_expired` indica se o orçamento está expirado baseado na `expiry_date`
+- Apenas orçamentos não deletados podem ser acessados
+- Informações sensíveis da empresa (documentos fiscais, dados bancários) não são expostas
+
+**Erros:**
+- `400`: Share token é obrigatório
+- `404`: Orçamento não encontrado (token inválido ou orçamento deletado)
+- `500`: Erro interno do servidor
+
+**Uso no Frontend:**
+Para gerar uma URL compartilhável, combine o share_token do orçamento:
+```
+https://seuapp.com/orcamentos/compartilhado/{share_token}
+```
+
+---
+
 ### 3.1. Listar Orçamentos
 
 **Endpoint:** `GET /api/budgets`

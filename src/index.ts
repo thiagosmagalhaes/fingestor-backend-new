@@ -19,6 +19,7 @@ import productsServicesRoutes from "./routes/products-services.routes";
 import inventoryRoutes from "./routes/inventory.routes";
 import customersRoutes from "./routes/customers.routes";
 import budgetsRoutes from "./routes/budgets.routes";
+import publicBudgetsRoutes from "./routes/public-budgets.routes";
 import followupRoutes from "./routes/followup.routes";
 import salesRoutes from "./routes/sales.routes";
 import paymentMethodsRoutes from "./routes/payment-methods.routes";
@@ -65,6 +66,9 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 // Routes
+// Public routes (sem autenticação)
+app.use("/public/budgets", publicBudgetsRoutes);
+
 app.use("/api/auth", authRoutes);
 app.use("/api/companies", companiesRoutes);
 app.use("/api/categories", categoriesRoutes);

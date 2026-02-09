@@ -5,6 +5,7 @@ export interface Budget {
   company_id: string;
   customer_id?: string;
   budget_number: string;
+  share_token?: string;
   customer_name?: string;
   customer_document?: string;
   customer_email?: string;
