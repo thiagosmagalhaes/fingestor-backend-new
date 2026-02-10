@@ -95,12 +95,19 @@ export class CompaniesController {
         return res.status(400).json({ error: 'Nome da empresa deve ter pelo menos 3 caracteres' });
       }
 
-      // Validação de CNPJ/CPF (se fornecido)
+      // Validação de CNPJ/CPF (se fornecido) (obrigastorio)
       if (cnpj) {
         const cnpjClean = cnpj.replace(/[^\d]/g, '');
         if (cnpjClean.length !== 11 && cnpjClean.length !== 14) {
           return res.status(400).json({ error: 'Documento deve ter 11 dígitos (CPF) ou 14 dígitos (CNPJ)' });
         }
+      } else {
+        return res.status(400).json({ error: 'CNPJ ou CPF é obrigatório para criar uma empresa' });
+      }
+
+      // Não deixa cadastrar sem tipo de conta definido (empresa ou pessoal)
+      if (accountType && !['empresa', 'pessoal'].includes(accountType)) {
+        return res.status(400).json({ error: 'accountType deve ser "empresa" ou "pessoal"' });
       }
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
