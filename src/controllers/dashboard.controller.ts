@@ -823,104 +823,68 @@ export class DashboardController {
   }
 
   /**
-   * GET /api/dashboard/dre?companyId=xxx&period=current|12months&month=1-12&year=YYYY
+   * GET /api/dashboard/dre?companyId=xxx&year=YYYY
    * Retorna dados do DRE (Demonstrativo de Resultados do Exercício)
-   * Com period=current: retorna DRE do mês especificado (ou mês atual se não informado)
-   * Com period=12months: retorna DRE dos últimos 12 meses, mês a mês
+   * Retorna sempre todos os 12 meses do ano (janeiro a dezembro)
+   * Se year não for informado, usa o ano atual
    */
   async getDRE(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { companyId, period = "current", month, year } = req.query;
+      const { companyId, year } = req.query;
 
       if (!companyId || typeof companyId !== "string") {
         return res.status(400).json({ error: "companyId é obrigatório" });
       }
 
-      if (period !== "current" && period !== "12months") {
-        return res
-          .status(400)
-          .json({ error: 'period deve ser "current" ou "12months"' });
-      }
-
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
-      if (period === "current") {
-        // DRE do mês especificado ou mês atual
-        const now = new Date();
-        let targetYear = now.getFullYear();
-        let targetMonth = now.getMonth(); // 0-11
+      // Determinar o ano a ser usado
+      const now = new Date();
+      let targetYear = now.getFullYear();
 
-        // Se year foi fornecido, validar e usar
-        if (year && typeof year === "string") {
-          const yearNum = parseInt(year, 10);
-          if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
-            return res
-              .status(400)
-              .json({ error: "year deve ser um ano válido (2000-2100)" });
-          }
-          targetYear = yearNum;
+      // Se year foi fornecido, validar e usar
+      if (year && typeof year === "string") {
+        const yearNum = parseInt(year, 10);
+        if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+          return res
+            .status(400)
+            .json({ error: "year deve ser um ano válido (2000-2100)" });
         }
+        targetYear = yearNum;
+      }
 
-        // Se month foi fornecido, validar e usar
-        if (month && typeof month === "string") {
-          const monthNum = parseInt(month, 10);
-          if (isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
-            return res
-              .status(400)
-              .json({ error: "month deve ser um número entre 1 e 12" });
-          }
-          targetMonth = monthNum - 1; // Converter para 0-11
-        }
+      // DRE de todos os 12 meses do ano especificado
+      const monthlyData: DREMonthlyData[] = [];
 
+      for (let month = 1; month <= 12; month++) {
         const dreData = await this.calculateDRE(
           supabaseClient,
           companyId,
-          targetMonth + 1,
+          month,
           targetYear,
-        ); // targetMonth + 1 porque JS usa 0-11
+        );
 
-        const response: DREResponse = {
-          current: dreData,
-        };
+        const date = new Date(targetYear, month - 1, 1);
+        const monthStr = date.toISOString().substring(0, 7); // YYYY-MM
+        const monthName = date
+          .toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
+          .replace(".", "")
+          .replace(/^\w/, (c) => c.toUpperCase()); // Capitalizar primeira letra
 
-        return res.json(response);
-      } else {
-        // DRE dos últimos 12 meses
-        const monthlyData: DREMonthlyData[] = [];
-        const now = new Date();
-
-        for (let i = 11; i >= 0; i--) {
-          const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const year = date.getFullYear();
-          const month = date.getMonth() + 1; // Converter para 1-12
-
-          const dreData = await this.calculateDRE(
-            supabaseClient,
-            companyId,
-            month,
-            year,
-          );
-
-          const monthStr = date.toISOString().substring(0, 7); // YYYY-MM
-          const monthName = date
-            .toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
-            .replace(".", "")
-            .replace(/^\w/, (c) => c.toUpperCase()); // Capitalizar primeira letra
-
-          monthlyData.push({
-            ...dreData,
-            month: monthStr,
-            month_name: monthName,
-          });
-        }
-
-        const response: DREResponse = {
-          monthly: monthlyData,
-        };
-
-        return res.json(response);
+        monthlyData.push({
+          ...dreData,
+          month: monthStr,
+          month_name: monthName,
+        });
       }
+
+      const response: DREResponse = {
+        monthly: monthlyData,
+        year: targetYear,
+      };
+
+      return res.json(response);
     } catch (error) {
       console.error("Error in getDRE:", error);
       res.status(500).json({ error: "Erro ao buscar dados do DRE" });

@@ -106,8 +106,8 @@ export interface DREMonthlyData extends DREData {
 }
 
 export interface DREResponse {
-  current?: DREData;
-  monthly?: DREMonthlyData[];
+  monthly: DREMonthlyData[];
+  year: number;
 }
 
 export interface TransactionDateRange {
