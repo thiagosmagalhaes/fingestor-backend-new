@@ -6,12 +6,50 @@ interface CreateCompanyRequest {
   name: string;
   cnpj?: string;
   accountType?: 'empresa' | 'pessoal';
+  email?: string;
+  fone?: string;
+  inscricaoEstadual?: string;
+  inscricaoMunicipal?: string;
+  regimeTributario?: 'simples_nacional' | 'simples_nacional_excesso' | 'regime_normal' | 'mei';
+  enderecoFiscal?: {
+    logradouro?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cidade?: string;
+    uf?: string;
+    cep?: string;
+    codigo_municipio?: string;
+    codigo_pais?: string;
+    pais?: string;
+  };
+  codigoMunicipio?: string;
+  uf?: string;
 }
 
 interface UpdateCompanyRequest {
   name?: string;
   cnpj?: string;
   accountType?: 'empresa' | 'pessoal';
+  email?: string;
+  fone?: string;
+  inscricaoEstadual?: string;
+  inscricaoMunicipal?: string;
+  regimeTributario?: 'simples_nacional' | 'simples_nacional_excesso' | 'regime_normal' | 'mei';
+  enderecoFiscal?: {
+    logradouro?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cidade?: string;
+    uf?: string;
+    cep?: string;
+    codigo_municipio?: string;
+    codigo_pais?: string;
+    pais?: string;
+  };
+  codigoMunicipio?: string;
+  uf?: string;
 }
 
 export class CompaniesController {
@@ -84,7 +122,19 @@ export class CompaniesController {
   async create(req: Request, res: Response): Promise<Response | void> {
     try {
       const authReq = req as AuthRequest;
-      const { name, cnpj, accountType } = req.body as CreateCompanyRequest;
+      const {
+        name,
+        cnpj,
+        accountType,
+        email,
+        fone,
+        inscricaoEstadual,
+        inscricaoMunicipal,
+        regimeTributario,
+        enderecoFiscal,
+        codigoMunicipio,
+        uf,
+      } = req.body as CreateCompanyRequest;
 
       // Validações
       if (!name || name.trim().length === 0) {
@@ -129,14 +179,26 @@ export class CompaniesController {
         type = cnpjClean.length === 11 ? 'pessoal' : 'empresa';
       }
 
+      const newCompany: any = {
+        user_id: user.id,
+        name: name.trim(),
+        cnpj: cnpj || null,
+        type: type,
+      };
+
+      // Adicionar campos fiscais opcionais
+      if (email) newCompany.email = email;
+      if (fone) newCompany.fone = fone;
+      if (inscricaoEstadual) newCompany.inscricao_estadual = inscricaoEstadual;
+      if (inscricaoMunicipal) newCompany.inscricao_municipal = inscricaoMunicipal;
+      if (regimeTributario) newCompany.regime_tributario = regimeTributario;
+      if (enderecoFiscal) newCompany.endereco_fiscal = enderecoFiscal;
+      if (codigoMunicipio) newCompany.codigo_municipio = codigoMunicipio;
+      if (uf) newCompany.uf = uf;
+
       const { data: company, error } = await supabaseClient
         .from('companies')
-        .insert({
-          user_id: user.id,
-          name: name.trim(),
-          cnpj: cnpj || null,
-          type: type,
-        })
+        .insert(newCompany)
         .select()
         .single();
 
@@ -227,7 +289,19 @@ export class CompaniesController {
     try {
       const authReq = req as AuthRequest;
       const { id } = req.params;
-      const { name, cnpj, accountType } = req.body as UpdateCompanyRequest;
+      const {
+        name,
+        cnpj,
+        accountType,
+        email,
+        fone,
+        inscricaoEstadual,
+        inscricaoMunicipal,
+        regimeTributario,
+        enderecoFiscal,
+        codigoMunicipio,
+        uf,
+      } = req.body as UpdateCompanyRequest;
 
       if (!id) {
         return res.status(400).json({ error: 'ID da empresa é obrigatório' });
@@ -268,6 +342,16 @@ export class CompaniesController {
       if (accountType !== undefined) {
         updateData.type = accountType;
       }
+
+      // Adicionar campos fiscais opcionais
+      if (email !== undefined) updateData.email = email;
+      if (fone !== undefined) updateData.fone = fone;
+      if (inscricaoEstadual !== undefined) updateData.inscricao_estadual = inscricaoEstadual;
+      if (inscricaoMunicipal !== undefined) updateData.inscricao_municipal = inscricaoMunicipal;
+      if (regimeTributario !== undefined) updateData.regime_tributario = regimeTributario;
+      if (enderecoFiscal !== undefined) updateData.endereco_fiscal = enderecoFiscal;
+      if (codigoMunicipio !== undefined) updateData.codigo_municipio = codigoMunicipio;
+      if (uf !== undefined) updateData.uf = uf;
 
       const { data: company, error } = await supabaseClient
         .from('companies')

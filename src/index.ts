@@ -24,6 +24,7 @@ import followupRoutes from "./routes/followup.routes";
 import salesRoutes from "./routes/sales.routes";
 import paymentMethodsRoutes from "./routes/payment-methods.routes";
 import cashSessionsRoutes from "./routes/cash-sessions.routes";
+import fiscalRoutes from "./routes/fiscal.routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { startNotificationsCron } from "./jobs/notifications.job";
 import { startWhatsAppJobs } from "./jobs/whatsapp.job";
@@ -91,6 +92,7 @@ app.use("/api/followup", followupRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/cash-sessions", cashSessionsRoutes);
+app.use("/api/fiscal", fiscalRoutes);
 
 // Error handlers
 app.use(notFound);
@@ -119,6 +121,7 @@ app.listen(PORT, () => {
   console.log(`🎟️  Support endpoints available at /api/support`);
   console.log(`📧 Newsletter endpoints available at /api/newsletter`);
   console.log(`⚙️  Metadata endpoints available at /api/metadata`);
+  console.log(`🧾 Fiscal endpoints available at /api/fiscal`);
   if (process.env.NODE_ENV === "production") {
     // Iniciar cron job de notificações
     startNotificationsCron();

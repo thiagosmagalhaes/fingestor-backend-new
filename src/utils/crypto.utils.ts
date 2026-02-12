@@ -93,9 +93,51 @@ export function decryptUserIdWithIV(token: string): string {
   }
 }
 
+/**
+ * Criptografa dados sensíveis genéricos (ex: senhas, tokens)
+ * Inclui IV aleatório no resultado para maior segurança
+ */
+export function encryptSensitiveData(data: string): string {
+  const key = getKey();
+  const iv = crypto.randomBytes(16); // IV aleatório
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  
+  let encrypted = cipher.update(data, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  
+  // Retorna IV + encrypted (IV nos primeiros 32 caracteres hex)
+  return iv.toString('hex') + encrypted;
+}
+
+/**
+ * Descriptografa dados sensíveis genéricos
+ * Extrai o IV do início do dado criptografado
+ */
+export function decryptSensitiveData(encryptedData: string): string {
+  try {
+    const key = getKey();
+    
+    // Extrair IV (primeiros 32 caracteres = 16 bytes em hex)
+    const ivHex = encryptedData.slice(0, 32);
+    const encrypted = encryptedData.slice(32);
+    
+    const iv = Buffer.from(ivHex, 'hex');
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  } catch (error) {
+    throw new Error('Falha ao descriptografar dados sensíveis');
+  }
+}
+
 export default {
   encryptUserId,
   decryptUserId,
   encryptUserIdWithIV,
-  decryptUserIdWithIV
+  decryptUserIdWithIV,
+  encryptSensitiveData,
+  decryptSensitiveData
 };
