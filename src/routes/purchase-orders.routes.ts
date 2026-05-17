@@ -14,5 +14,6 @@ router.get('/:id/whatsapp-message', (req, res) => purchaseOrdersController.getWh
 router.post('/', (req, res) => purchaseOrdersController.create(req, res));
 router.put('/:id', (req, res) => purchaseOrdersController.update(req, res));
 router.post('/:id/cancel', (req, res) => purchaseOrdersController.cancel(req, res));
+router.post('/:id/complete', (req, res) => purchaseOrdersController.complete(req, res));
 
 export default router;

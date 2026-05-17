@@ -143,6 +143,57 @@ export class PurchaseProductsController {
   }
 }
 
+export class PurchaseSuppliersController {
+  /**
+   * GET /api/purchase-suppliers?companyId=xxx&search=xxx&onlyActive=true
+   */
+  async search(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const authReq = req as AuthRequest;
+      const { companyId, search, onlyActive } = req.query;
+
+      if (!companyId || typeof companyId !== 'string') {
+        return res.status(400).json({ error: 'companyId is required' });
+      }
+
+      const supabase = getSupabaseClient(authReq.accessToken!);
+      const activeOnly = onlyActive !== 'false';
+      const data = await purchaseOrderService.searchSuppliers(
+        supabase,
+        companyId,
+        typeof search === 'string' ? search : '',
+        activeOnly,
+      );
+
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error in PurchaseSuppliersController.search:', error);
+      return res.status(500).json({ error: 'Failed to search suppliers', message: error.message });
+    }
+  }
+
+  /**
+   * GET /api/purchase-suppliers/list?companyId=xxx
+   */
+  async list(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const authReq = req as AuthRequest;
+      const { companyId } = req.query;
+
+      if (!companyId || typeof companyId !== 'string') {
+        return res.status(400).json({ error: 'companyId is required' });
+      }
+
+      const supabase = getSupabaseClient(authReq.accessToken!);
+      const data = await purchaseOrderService.listSuppliers(supabase, companyId);
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error in PurchaseSuppliersController.list:', error);
+      return res.status(500).json({ error: 'Failed to list suppliers', message: error.message });
+    }
+  }
+}
+
 export class PurchaseOrdersController {
   /**
    * GET /api/purchase-orders?companyId=xxx&status=xxx
@@ -230,6 +281,8 @@ export class PurchaseOrdersController {
         orderDate,
         body.items,
         body.notes,
+        undefined, // status defaults to 'saved'
+        body.supplier,
       );
 
       return res.status(201).json(data);
@@ -283,6 +336,7 @@ export class PurchaseOrdersController {
           notes: body.notes,
           status: body.status,
           items: body.items,
+          supplier: body.supplier,
         },
       );
 
@@ -312,6 +366,28 @@ export class PurchaseOrdersController {
     } catch (error: any) {
       console.error('Error in PurchaseOrdersController.cancel:', error);
       return res.status(500).json({ error: 'Failed to cancel order', message: error.message });
+    }
+  }
+
+  /**
+   * POST /api/purchase-orders/:id/complete
+   */
+  async complete(req: Request, res: Response): Promise<Response | void> {
+    try {
+      const authReq = req as AuthRequest;
+      const { id } = req.params;
+      const { companyId } = req.body;
+
+      if (!companyId) {
+        return res.status(400).json({ error: 'companyId is required' });
+      }
+
+      const supabase = getSupabaseClient(authReq.accessToken!);
+      const data = await purchaseOrderService.completeOrder(supabase, id, companyId);
+      return res.json(data);
+    } catch (error: any) {
+      console.error('Error in PurchaseOrdersController.complete:', error);
+      return res.status(500).json({ error: 'Failed to complete order', message: error.message });
     }
   }
 
@@ -371,4 +447,5 @@ export class PurchaseOrdersController {
 }
 
 export const purchaseProductsController = new PurchaseProductsController();
+export const purchaseSuppliersController = new PurchaseSuppliersController();
 export const purchaseOrdersController = new PurchaseOrdersController();

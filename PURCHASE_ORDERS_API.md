@@ -12,14 +12,18 @@
    - [1.2 List All Products](#12-list-all-products)
    - [1.3 Create Product](#13-create-product)
    - [1.4 Update Product](#14-update-product)
-2. [Purchase Orders](#2-purchase-orders)
-   - [2.1 List Orders](#21-list-orders)
-   - [2.2 Get Order by ID](#22-get-order-by-id)
-   - [2.3 Create Order (with auto product creation)](#23-create-order-with-auto-product-creation)
-   - [2.4 Update Order](#24-update-order)
-   - [2.5 Cancel Order](#25-cancel-order)
-   - [2.6 Generate WhatsApp Message](#26-generate-whatsapp-message)
-   - [2.7 Smart Purchase Suggestions](#27-smart-purchase-suggestions)
+2. [Purchase Suppliers](#2-purchase-suppliers)
+   - [2.1 Search Suppliers](#21-search-suppliers)
+   - [2.2 List All Suppliers](#22-list-all-suppliers)
+3. [Purchase Orders](#3-purchase-orders)
+   - [3.1 List Orders](#31-list-orders)
+   - [3.2 Get Order by ID](#32-get-order-by-id)
+   - [3.3 Create Order (with auto supplier & product creation)](#33-create-order-with-auto-supplier--product-creation)
+   - [3.4 Update Order](#34-update-order)
+   - [3.5 Cancel Order](#35-cancel-order)
+   - [3.6 Complete Order](#36-complete-order)
+   - [3.7 Generate WhatsApp Message](#37-generate-whatsapp-message)
+   - [3.8 Smart Purchase Suggestions](#38-smart-purchase-suggestions)
 
 ---
 
@@ -179,11 +183,69 @@ curl -X PUT \
 
 ---
 
-## 2. Purchase Orders
+## 2. Purchase Suppliers
 
-### 2.1 List Orders
+### 2.1 Search Suppliers
 
-Returns all purchase orders for a company, including their items.
+Returns up to 20 active suppliers whose name or CNPJ contains the `search` string. Use this for autocomplete while the user is typing.
+
+```bash
+curl -X GET \
+  "http://localhost:3001/api/purchase-suppliers/search?companyId=YOUR_COMPANY_ID&search=Distribuidora&onlyActive=true" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Query Parameters**
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `companyId` | Yes | – | UUID of the company |
+| `search` | No | `""` | Text to search for in name or CNPJ (case-insensitive) |
+| `onlyActive` | No | `true` | Pass `false` to include inactive suppliers |
+
+**Response `200`**
+```json
+[
+  {
+    "id": "f8e1d290-...",
+    "company_id": "YOUR_COMPANY_ID",
+    "name": "Distribuidora ABC",
+    "cnpj": "12.345.678/0001-90",
+    "is_active": true,
+    "created_at": "2026-05-01T10:00:00Z",
+    "updated_at": "2026-05-01T10:00:00Z"
+  }
+]
+```
+
+---
+
+### 2.2 List All Suppliers
+
+Returns every supplier of the company (active and inactive), sorted alphabetically.
+
+```bash
+curl -X GET \
+  "http://localhost:3001/api/purchase-suppliers/list?companyId=YOUR_COMPANY_ID" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Query Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `companyId` | Yes | UUID of the company |
+
+**Response `200`** – Array of all supplier objects.
+
+---
+
+## 3. Purchase Orders
+
+### 3.1 List Orders
+
+Returns all purchase orders for a company, including their items and supplier information.
+
 
 ```bash
 curl -X GET \
@@ -236,18 +298,21 @@ curl -X GET \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-**Response `200`** – Single order object with items (same schema as list).  
+**Response `200`** – Single order object with items and supplier (same schema as list).  
 **Response `404`** – `{ "error": "Purchase order not found" }`
 
 ---
 
-### 2.3 Create Order (with auto product creation)
+### 3.3 Create Order (with auto supplier & product creation)
 
-Creates a purchase order. Each item can either reference an existing product via `productId` or provide a `productName` to trigger automatic product registration.
+Creates a purchase order with automatic supplier and product registration when needed.
 
-After the order is saved, any new products are permanently stored and will appear in future autocomplete searches.
+- **For suppliers**: Provide `supplierId` to use an existing supplier, or `supplierName` (and optionally `supplierCnpj`) to find/create one automatically.
+- **For products**: Provide `productId` to use an existing product, or `productName` to trigger automatic product registration.
 
-**Using existing products:**
+After the order is saved, any new suppliers and products are permanently stored and will appear in future searches.
+
+**Using existing supplier and products:**
 ```bash
 curl -X POST \
   "http://localhost:3001/api/purchase-orders" \
@@ -257,6 +322,9 @@ curl -X POST \
     "companyId": "YOUR_COMPANY_ID",
     "orderDate": "2026-05-16",
     "notes": "Weekly supplier order",
+    "supplier": {
+      "supplierId": "EXISTING_SUPPLIER_UUID"
+    },
     "items": [
       {
         "productId": "EXISTING_PRODUCT_UUID",
@@ -273,7 +341,7 @@ curl -X POST \
   }'
 ```
 
-**With auto product creation (new products are typed by name):**
+**With auto supplier & product creation (new items typed by name):**
 ```bash
 curl -X POST \
   "http://localhost:3001/api/purchase-orders" \
@@ -283,6 +351,10 @@ curl -X POST \
     "companyId": "YOUR_COMPANY_ID",
     "orderDate": "2026-05-16",
     "notes": "First order from new supplier",
+    "supplier": {
+      "supplierName": "Distribuidora ABC",
+      "supplierCnpj": "12.345.678/0001-90"
+    },
     "items": [
       {
         "productName": "Wheat Flour Bundle",
@@ -315,6 +387,10 @@ curl -X POST \
 | `companyId` | Yes | `string` | UUID of the company |
 | `orderDate` | No | today | ISO date string (`YYYY-MM-DD`) |
 | `notes` | No | `null` | Optional notes |
+| `supplier` | No | `object` | Supplier information (optional) |
+| `supplier.supplierId` | Conditional | `string` | UUID of existing supplier. If omitted, uses `supplierName` |
+| `supplier.supplierName` | Conditional | `string` | Name of the supplier. Auto-creates if not found |
+| `supplier.supplierCnpj` | No | `string` | Optional CNPJ for better identification |
 | `items` | Yes | `array` | At least one item required |
 | `items[].productId` | Conditional | `string` | UUID of existing product. Required if `productName` is omitted |
 | `items[].productName` | Conditional | `string` | Name of the product. Used to auto-create when `productId` is omitted |
@@ -322,11 +398,13 @@ curl -X POST \
 | `items[].quantity` | Yes | `number` | Must be greater than 0 |
 | `items[].observation` | No | `null` | Optional item observation |
 
-**Response `201`** – Created order with all items resolved.
+**Response `201`** – Created order with all items and supplier resolved.
 
 ---
 
-### 2.4 Update Order
+### 3.4 Update Order
+
+Updates an existing purchase order. All fields are optional. You can update supplier, items, dates, notes, or status.
 
 Updates header fields and/or fully replaces the item list of an existing order.
 
@@ -367,13 +445,14 @@ curl -X PUT \
 | `orderDate` | `string` | New order date |
 | `notes` | `string` | New notes |
 | `status` | `string` | New status |
+| `supplier` | `object` | New supplier information (same schema as create) |
 | `items` | `array` | If provided, replaces all existing items. Same schema as create |
 
 **Response `200`** – Updated order with items.
 
 ---
 
-### 2.5 Cancel Order
+### 3.5 Cancel Order
 
 ```bash
 curl -X POST \
@@ -396,7 +475,38 @@ curl -X POST \
 
 ---
 
-### 2.6 Generate WhatsApp Message
+### 3.6 Complete Order
+
+Marks a purchase order as completed (received).
+
+```bash
+curl -X POST \
+  "http://localhost:3001/api/purchase-orders/ORDER_UUID/complete" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "companyId": "YOUR_COMPANY_ID"
+  }'
+```
+
+**Request Body**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `companyId` | Yes | UUID of the company |
+
+**Response `200`**
+```json
+{
+  "id": "ORDER_UUID",
+  "status": "completed",
+  ...
+}
+```
+
+---
+
+### 3.7 Generate WhatsApp Message
 
 Generates a formatted WhatsApp message ready to copy and send manually to a supplier.
 
@@ -431,7 +541,7 @@ The `message` field can be copied directly and pasted into WhatsApp.
 
 ---
 
-### 2.7 Smart Purchase Suggestions
+### 3.8 Smart Purchase Suggestions
 
 Analyzes previous purchase history and returns products that are likely needed again based on average purchase intervals.
 

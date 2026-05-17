@@ -14,6 +14,27 @@ export type PurchaseUnitType =
 
 export type PurchaseOrderStatus = 'draft' | 'saved' | 'completed' | 'canceled';
 
+// ─── Purchase Suppliers ────────────────────────────────────
+
+export interface PurchaseSupplier {
+  id: string;
+  company_id: string;
+  name: string;
+  cnpj?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatePurchaseSupplierInput {
+  /** Supplier ID if already exists, or omit to create/find by name+cnpj */
+  supplierId?: string;
+  /** Supplier name - required when creating new supplier */
+  supplierName?: string;
+  /** Optional CNPJ for better identification */
+  supplierCnpj?: string;
+}
+
 // ─── Purchase Products ─────────────────────────────────────
 
 export interface PurchaseProduct {
@@ -69,10 +90,12 @@ export interface PurchaseOrder {
   order_date: string;
   status: PurchaseOrderStatus;
   notes?: string;
+  supplier_id?: string | null;
   created_by?: string;
   created_at: string;
   updated_at: string;
   items?: PurchaseOrderItem[];
+  purchase_suppliers?: PurchaseSupplier;
 }
 
 export interface CreatePurchaseOrderRequest {
@@ -80,6 +103,7 @@ export interface CreatePurchaseOrderRequest {
   orderDate?: string; // ISO date, defaults to today
   notes?: string;
   items: CreatePurchaseOrderItemInput[];
+  supplier?: CreatePurchaseSupplierInput;
 }
 
 export interface UpdatePurchaseOrderRequest {
@@ -87,6 +111,7 @@ export interface UpdatePurchaseOrderRequest {
   notes?: string;
   status?: PurchaseOrderStatus;
   items?: CreatePurchaseOrderItemInput[];
+  supplier?: CreatePurchaseSupplierInput;
 }
 
 // ─── Smart Suggestions ────────────────────────────────────

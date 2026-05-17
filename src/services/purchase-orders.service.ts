@@ -4,9 +4,128 @@ import {
   PurchaseOrderStatus,
   CreatePurchaseOrderItemInput,
   ProductPurchasePattern,
+  CreatePurchaseSupplierInput,
 } from '../types/purchase-orders.types';
 
 export class PurchaseOrderService {
+  // ─── Suppliers ─────────────────────────────────────────────────
+
+  async searchSuppliers(
+    supabase: SupabaseClient,
+    companyId: string,
+    search: string,
+    onlyActive = true,
+  ) {
+    let query = supabase
+      .from('purchase_suppliers')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('name', { ascending: true });
+
+    if (onlyActive) {
+      query = query.eq('is_active', true);
+    }
+
+    if (search && search.trim().length > 0) {
+      query = query.or(`name.ilike.%${search.trim()}%,cnpj.ilike.%${search.trim()}%`);
+    }
+
+    const { data, error } = await query.limit(20);
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  async getSupplierById(supabase: SupabaseClient, id: string) {
+    const { data, error } = await supabase
+      .from('purchase_suppliers')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  async createSupplier(
+    supabase: SupabaseClient,
+    companyId: string,
+    name: string,
+    cnpj?: string,
+  ) {
+    const { data, error } = await supabase
+      .from('purchase_suppliers')
+      .insert({
+        company_id: companyId,
+        name: name.trim(),
+        cnpj: cnpj ? cnpj.trim() : null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async listSuppliers(supabase: SupabaseClient, companyId: string) {
+    const { data, error } = await supabase
+      .from('purchase_suppliers')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('name', { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  /**
+   * Resolves or creates a supplier based on input.
+   * - If supplierId is provided, uses the existing supplier.
+   * - If only supplierName is provided, tries to find existing by name (and cnpj if provided).
+   * - If not found, creates a new supplier.
+   */
+  async resolveSupplier(
+    supabase: SupabaseClient,
+    companyId: string,
+    supplierInput?: CreatePurchaseSupplierInput,
+  ): Promise<string | null> {
+    if (!supplierInput) return null;
+
+    if (supplierInput.supplierId) {
+      // Validate that supplier exists
+      const supplier = await this.getSupplierById(supabase, supplierInput.supplierId);
+      if (!supplier) throw new Error(`Supplier ${supplierInput.supplierId} not found.`);
+      return supplier.id;
+    }
+
+    if (!supplierInput.supplierName || supplierInput.supplierName.trim().length === 0) {
+      return null;
+    }
+
+    // Try to find existing supplier by name and cnpj (if provided)
+    let query = supabase
+      .from('purchase_suppliers')
+      .select('*')
+      .eq('company_id', companyId)
+      .ilike('name', supplierInput.supplierName.trim());
+
+    if (supplierInput.supplierCnpj) {
+      query = query.eq('cnpj', supplierInput.supplierCnpj.trim());
+    }
+
+    const { data: existing } = await query.maybeSingle();
+
+    if (existing) {
+      return existing.id;
+    }
+
+    // Create new supplier
+    const created = await this.createSupplier(
+      supabase,
+      companyId,
+      supplierInput.supplierName.trim(),
+      supplierInput.supplierCnpj,
+    );
+
+    return created.id;
+  }
+
   // ─── Products ──────────────────────────────────────────────────
 
   async searchProducts(
@@ -94,7 +213,7 @@ export class PurchaseOrderService {
   ) {
     let query = supabase
       .from('purchase_orders')
-      .select(`*, purchase_order_items(*)`)
+      .select(`*, purchase_order_items(*), purchase_suppliers(*)`)
       .eq('company_id', companyId)
       .order('order_date', { ascending: false });
 
@@ -110,7 +229,7 @@ export class PurchaseOrderService {
   async getOrderById(supabase: SupabaseClient, id: string) {
     const { data, error } = await supabase
       .from('purchase_orders')
-      .select(`*, purchase_order_items(*)`)
+      .select(`*, purchase_order_items(*), purchase_suppliers(*)`)
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
@@ -123,6 +242,9 @@ export class PurchaseOrderService {
    *  - If productId is provided, uses the existing product.
    *  - If only productName is provided, tries to find an existing product by
    *    normalized name; creates a new one if not found.
+   * For supplier:
+   *  - If supplierId is provided, uses the existing supplier.
+   *  - If only supplierName is provided, tries to find/create by name+cnpj.
    * Returns the saved order with its items.
    */
   async createOrder(
@@ -133,10 +255,14 @@ export class PurchaseOrderService {
     items: CreatePurchaseOrderItemInput[],
     notes?: string,
     status: PurchaseOrderStatus = 'saved',
+    supplier?: CreatePurchaseSupplierInput,
   ) {
     if (!items || items.length === 0) {
       throw new Error('A purchase order must have at least one item.');
     }
+
+    // 0. Resolve supplier
+    const supplierId = await this.resolveSupplier(supabase, companyId, supplier);
 
     // 1. Create the purchase order
     const { data: order, error: orderError } = await supabase
@@ -146,6 +272,7 @@ export class PurchaseOrderService {
         order_date: orderDate,
         status,
         notes: notes ?? null,
+        supplier_id: supplierId,
         created_by: userId,
       })
       .select()
@@ -235,12 +362,19 @@ export class PurchaseOrderService {
       notes?: string;
       status?: PurchaseOrderStatus;
       items?: CreatePurchaseOrderItemInput[];
+      supplier?: CreatePurchaseSupplierInput;
     },
   ) {
     const orderUpdates: Record<string, unknown> = {};
     if (updates.orderDate !== undefined) orderUpdates.order_date = updates.orderDate;
     if (updates.notes !== undefined) orderUpdates.notes = updates.notes;
     if (updates.status !== undefined) orderUpdates.status = updates.status;
+
+    // Resolve supplier if provided
+    if (updates.supplier !== undefined) {
+      const supplierId = await this.resolveSupplier(supabase, companyId, updates.supplier);
+      orderUpdates.supplier_id = supplierId;
+    }
 
     if (Object.keys(orderUpdates).length > 0) {
       const { error } = await supabase
@@ -334,6 +468,18 @@ export class PurchaseOrderService {
     const { data, error } = await supabase
       .from('purchase_orders')
       .update({ status: 'canceled' })
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  async completeOrder(supabase: SupabaseClient, id: string, companyId: string) {
+    const { data, error } = await supabase
+      .from('purchase_orders')
+      .update({ status: 'completed' })
       .eq('id', id)
       .eq('company_id', companyId)
       .select()

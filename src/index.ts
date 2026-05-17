@@ -26,6 +26,7 @@ import paymentMethodsRoutes from "./routes/payment-methods.routes";
 import cashSessionsRoutes from "./routes/cash-sessions.routes";
 import fiscalRoutes from "./routes/fiscal.routes";
 import purchaseProductsRoutes from "./routes/purchase-products.routes";
+import purchaseSuppliersRoutes from "./routes/purchase-suppliers.routes";
 import purchaseOrdersRoutes from "./routes/purchase-orders.routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { startNotificationsCron } from "./jobs/notifications.job";
@@ -96,6 +97,7 @@ app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/cash-sessions", cashSessionsRoutes);
 app.use("/api/fiscal", fiscalRoutes);
 app.use("/api/purchase-products", purchaseProductsRoutes);
+app.use("/api/purchase-suppliers", purchaseSuppliersRoutes);
 app.use("/api/purchase-orders", purchaseOrdersRoutes);
 
 // Error handlers

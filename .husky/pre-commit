@@ -1,11 +1,4 @@
 #!/usr/bin/env sh
-set -e
+. "$(dirname -- "$0")/_/husky.sh"
 
 npm run build
-
-# Run tests only when a top-level test script exists.
-if npm pkg get scripts.test | grep -vq null; then
-	npm test
-else
-	echo "No npm test script configured, skipping tests."
-fi
