@@ -25,6 +25,8 @@ import salesRoutes from "./routes/sales.routes";
 import paymentMethodsRoutes from "./routes/payment-methods.routes";
 import cashSessionsRoutes from "./routes/cash-sessions.routes";
 import fiscalRoutes from "./routes/fiscal.routes";
+import purchaseProductsRoutes from "./routes/purchase-products.routes";
+import purchaseOrdersRoutes from "./routes/purchase-orders.routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { startNotificationsCron } from "./jobs/notifications.job";
 import { startWhatsAppJobs } from "./jobs/whatsapp.job";
@@ -93,6 +95,8 @@ app.use("/api/sales", salesRoutes);
 app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/cash-sessions", cashSessionsRoutes);
 app.use("/api/fiscal", fiscalRoutes);
+app.use("/api/purchase-products", purchaseProductsRoutes);
+app.use("/api/purchase-orders", purchaseOrdersRoutes);
 
 // Error handlers
 app.use(notFound);
