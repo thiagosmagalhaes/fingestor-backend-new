@@ -267,7 +267,6 @@ export class PurchaseOrdersController {
       }
 
       const supabase = getSupabaseClient(authReq.accessToken!);
-      const userId = authReq.user!.id;
 
       // Extract companyId from the existing order
       const existing = await purchaseOrderService.getOrderById(supabase, id);
@@ -279,7 +278,6 @@ export class PurchaseOrdersController {
         supabase,
         id,
         existing.company_id,
-        userId,
         {
           orderDate: body.orderDate,
           notes: body.notes,
