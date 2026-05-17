@@ -230,7 +230,6 @@ export class PurchaseOrderService {
     supabase: SupabaseClient,
     id: string,
     companyId: string,
-    userId: string,
     updates: {
       orderDate?: string;
       notes?: string;
