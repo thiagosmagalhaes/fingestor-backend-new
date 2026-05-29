@@ -10,7 +10,7 @@ export interface RecurringTransaction {
   id: string;
   company_id: string;
   category_id?: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'investment';
   description: string;
   amount: number;
   frequency: RecurringFrequency;
@@ -32,14 +32,16 @@ export interface RecurringTransaction {
 export interface CreateRecurringTransactionRequest {
   company_id: string;
   category_id?: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'investment';
   description: string;
   amount: number;
   date: string; // Start date
   notes?: string;
-  
+
   // Recurring fields
   is_recurring: true;
   recurring_frequency: RecurringFrequency;
   recurring_end_date?: string; // Optional, if not provided generates 1 year
 }
+
+export type TransactionType = 'income' | 'expense' | 'investment';

@@ -4,7 +4,7 @@ import { AuthRequest } from "../middleware/auth";
 import recurringTransactionsService from "../services/recurring-transactions.service";
 import { RecurringFrequency } from "../types/recurring-transactions.types";
 
-type TransactionType = "income" | "expense";
+type TransactionType = "income" | "expense" | "investment";
 type TransactionStatus = "paid" | "pending" | "scheduled";
 
 interface CreateTransactionRequest {
@@ -90,6 +90,8 @@ export class TransactionsController {
         query = query.eq("type", "income");
       } else if (filter === "expense") {
         query = query.eq("type", "expense");
+      } else if (filter === "investment") {
+        query = query.eq("type", "investment");
       } else if (filter === "scheduled") {
         query = query.eq("status", "scheduled");
       } else if (filter === "pending") {
@@ -146,7 +148,7 @@ export class TransactionsController {
         id: t.id,
         description: t.description,
         amount: Number(t.amount),
-        type: t.type as "income" | "expense",
+        type: t.type as "income" | "expense" | "investment",
         categoryId: t.category_id || "",
         companyId: t.company_id,
         date: new Date(t.date + "T00:00:00-03:00"),
@@ -170,11 +172,11 @@ export class TransactionsController {
         recurringTransactionId: t.recurring_transaction_id || undefined,
         recurringInfo: t.recurring_transaction
           ? {
-              id: t.recurring_transaction.id,
-              description: t.recurring_transaction.description,
-              frequency: t.recurring_transaction.frequency,
-              isActive: t.recurring_transaction.is_active,
-            }
+            id: t.recurring_transaction.id,
+            description: t.recurring_transaction.description,
+            frequency: t.recurring_transaction.frequency,
+            isActive: t.recurring_transaction.is_active,
+          }
           : undefined,
       }));
 
@@ -273,10 +275,10 @@ export class TransactionsController {
         return res.status(400).json({ error: "categoryId é obrigatório" });
       }
 
-      if (!type || (type !== "income" && type !== "expense")) {
+      if (!type || !(["income", "expense", "investment"] as string[]).includes(type)) {
         return res
           .status(400)
-          .json({ error: 'Tipo deve ser "income" ou "expense"' });
+          .json({ error: 'Tipo deve ser "income", "expense" ou "investment"' });
       }
 
       if (!description || description.trim().length === 0) {
@@ -322,7 +324,7 @@ export class TransactionsController {
               "Não é possível criar uma transação recorrente e parcelada ao mesmo tempo",
           });
         }
-        
+
         // Transações recorrentes podem ter cartão de crédito vinculado
       }
 
@@ -584,10 +586,10 @@ export class TransactionsController {
       }
 
       // Validações
-      if (type !== undefined && type !== "income" && type !== "expense") {
+      if (type !== undefined && !(["income", "expense", "investment"] as string[]).includes(type)) {
         return res
           .status(400)
-          .json({ error: 'Tipo deve ser "income" ou "expense"' });
+          .json({ error: 'Tipo deve ser "income", "expense" ou "investment"' });
       }
 
       if (description !== undefined) {

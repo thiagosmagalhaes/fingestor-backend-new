@@ -5,14 +5,14 @@ import { AuthRequest } from '../middleware/auth';
 interface CreateCategoryRequest {
   companyId: string;
   name: string;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'investment';
   color: string;
   nature?: 'COST' | 'EXPENSE';
 }
 
 interface UpdateCategoryRequest {
   name?: string;
-  type?: 'income' | 'expense';
+  type?: 'income' | 'expense' | 'investment';
   color?: string;
   nature?: 'COST' | 'EXPENSE';
 }
@@ -116,8 +116,8 @@ export class CategoriesController {
         return res.status(400).json({ error: 'Nome da categoria deve ter pelo menos 2 caracteres' });
       }
 
-      if (!type || (type !== 'income' && type !== 'expense')) {
-        return res.status(400).json({ error: 'Tipo deve ser "income" ou "expense"' });
+      if (!type || !(['income', 'expense', 'investment'] as string[]).includes(type)) {
+        return res.status(400).json({ error: 'Tipo deve ser "income", "expense" ou "investment"' });
       }
 
       if (!color || !color.match(/^#[0-9A-Fa-f]{6}$/)) {
@@ -129,7 +129,7 @@ export class CategoriesController {
         if (nature !== 'COST' && nature !== 'EXPENSE') {
           return res.status(400).json({ error: 'Nature deve ser "COST" ou "EXPENSE"' });
         }
-        if (type === 'income') {
+        if (type === 'income' || type === 'investment') {
           return res.status(400).json({ error: 'Nature só pode ser definida para categorias de despesa' });
         }
       }
@@ -224,8 +224,8 @@ export class CategoriesController {
         }
       }
 
-      if (type !== undefined && type !== 'income' && type !== 'expense') {
-        return res.status(400).json({ error: 'Tipo deve ser "income" ou "expense"' });
+      if (type !== undefined && !(['income', 'expense', 'investment'] as string[]).includes(type)) {
+        return res.status(400).json({ error: 'Tipo deve ser "income", "expense" ou "investment"' });
       }
 
       if (color !== undefined && !color.match(/^#[0-9A-Fa-f]{6}$/)) {
@@ -257,17 +257,17 @@ export class CategoriesController {
       const finalType = type !== undefined ? type : currentCategory.type;
 
       // Validar nature com base no tipo final
-      if (nature !== undefined && finalType === 'income') {
+      if (nature !== undefined && (finalType === 'income' || finalType === 'investment')) {
         return res.status(400).json({ error: 'Nature só pode ser definida para categorias de despesa (expense)' });
       }
 
-      // Se está mudando de expense para income, remover nature
-      if (type === 'income' && currentCategory.type === 'expense') {
-        // Nature será automaticamente removida pelo constraint do banco
+      // Se está mudando de expense para income ou investment, remover nature
+      if ((type === 'income' || type === 'investment') && currentCategory.type === 'expense') {
+        // Nature será automaticamente removida
       }
 
-      // Se está mudando de income para expense, nature é obrigatória
-      if (type === 'expense' && currentCategory.type === 'income' && !nature) {
+      // Se está mudando de income/investment para expense, nature é obrigatória
+      if (type === 'expense' && currentCategory.type !== 'expense' && !nature) {
         return res.status(400).json({ error: 'Nature é obrigatória ao mudar para categoria de despesa (expense)' });
       }
 
@@ -280,8 +280,8 @@ export class CategoriesController {
 
       if (type !== undefined) {
         updateData.type = type;
-        // Se mudando para income, garantir que nature seja null
-        if (type === 'income') {
+        // Se mudando para income ou investment, garantir que nature seja null
+        if (type === 'income' || type === 'investment') {
           updateData.nature = null;
         }
       }
@@ -379,8 +379,8 @@ export class CategoriesController {
       if (error) {
         // Verificar se é erro de violação de foreign key (categoria tem transações vinculadas)
         if (error.code === '23503') {
-          return res.status(409).json({ 
-            error: 'Não é possível deletar esta categoria pois existem transações vinculadas a ela. Remova ou reatribua as transações antes de deletar a categoria.' 
+          return res.status(409).json({
+            error: 'Não é possível deletar esta categoria pois existem transações vinculadas a ela. Remova ou reatribua as transações antes de deletar a categoria.'
           });
         }
         console.error('Error deleting category:', error);

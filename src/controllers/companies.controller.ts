@@ -164,7 +164,7 @@ export class CompaniesController {
 
       // Obter user_id do token
       const { data: { user } } = await supabaseClient.auth.getUser();
-      
+
       if (!user) {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
@@ -211,16 +211,19 @@ export class CompaniesController {
       try {
         const cnpjClean = cnpj ? cnpj.replace(/[^\d]/g, '') : '';
         const isPessoaFisica = cnpjClean.length === 11; // CPF tem 11 dígitos
-        
+
         let defaultCategories;
-        
+
         if (isPessoaFisica) {
           // Categorias para Pessoa Física (CPF)
           defaultCategories = [
             { name: 'Salário', type: 'income', color: '#22c55e' },
             { name: 'Freelance', type: 'income', color: '#3b82f6' },
-            { name: 'Investimentos', type: 'income', color: '#8b5cf6' },
             { name: 'Outros Rendimentos', type: 'income', color: '#10b981' },
+            { name: 'Investimentos', type: 'investment', color: '#8b5cf6' },
+            { name: 'Reserva de Emergência', type: 'investment', color: '#7c3aed' },
+            { name: 'Renda Fixa', type: 'investment', color: '#6d28d9' },
+            { name: 'Renda Variável', type: 'investment', color: '#5b21b6' },
             { name: 'Moradia', type: 'expense', color: '#ef4444', nature: 'EXPENSE' },
             { name: 'Alimentação', type: 'expense', color: '#f97316', nature: 'EXPENSE' },
             { name: 'Transporte', type: 'expense', color: '#eab308', nature: 'EXPENSE' },
@@ -235,7 +238,9 @@ export class CompaniesController {
           defaultCategories = [
             { name: 'Vendas', type: 'income', color: '#22c55e' },
             { name: 'Serviços', type: 'income', color: '#3b82f6' },
-            { name: 'Investimentos', type: 'income', color: '#8b5cf6' },
+            { name: 'Investimentos', type: 'investment', color: '#8b5cf6' },
+            { name: 'Aplicações Financeiras', type: 'investment', color: '#7c3aed' },
+            { name: 'Reserva de Caixa', type: 'investment', color: '#6d28d9' },
             { name: 'Folha de Pagamento', type: 'expense', color: '#ef4444', nature: 'EXPENSE' },
             { name: 'Aluguel', type: 'expense', color: '#f97316', nature: 'EXPENSE' },
             { name: 'Impostos', type: 'expense', color: '#eab308', nature: 'EXPENSE' },

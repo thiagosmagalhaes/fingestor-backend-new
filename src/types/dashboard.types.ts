@@ -30,7 +30,7 @@ export interface RecentTransactionItem {
   id: string;
   description: string;
   amount: number;
-  type: 'income' | 'expense';
+  type: 'income' | 'expense' | 'investment';
   status: 'paid' | 'pending' | 'overdue' | 'scheduled';
   dueDate: string;
   paidDate?: string | null;

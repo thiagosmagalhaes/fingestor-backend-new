@@ -5,7 +5,7 @@ import { RecurringTransaction, RecurringFrequency } from '../types/recurring-tra
  * Service to handle recurring transactions generation
  */
 export class RecurringTransactionsService {
-  
+
   /**
    * Creates a recurring transaction rule and generates initial transactions
    */
@@ -14,7 +14,7 @@ export class RecurringTransactionsService {
     data: {
       company_id: string;
       category_id?: string;
-      type: 'income' | 'expense';
+      type: 'income' | 'expense' | 'investment';
       description: string;
       amount: number;
       frequency: RecurringFrequency;
@@ -27,7 +27,7 @@ export class RecurringTransactionsService {
   ): Promise<RecurringTransaction> {
     // Calculate end_date if not provided (1 year from start)
     const startDate = new Date(data.start_date);
-    const endDate = data.end_date 
+    const endDate = data.end_date
       ? new Date(data.end_date)
       : new Date(startDate.getFullYear() + 1, startDate.getMonth(), startDate.getDate());
 
@@ -73,14 +73,14 @@ export class RecurringTransactionsService {
     const frequencyDays = parseInt(recurringRule.frequency);
     const startDate = new Date(recurringRule.start_date);
     const endDate = new Date(recurringRule.end_date || this.getOneYearFromNow());
-    
-    const lastGenerated = recurringRule.last_generated_date 
+
+    const lastGenerated = recurringRule.last_generated_date
       ? new Date(recurringRule.last_generated_date)
       : new Date(startDate.getTime() - 1); // Start from before start_date
 
     const transactions = [];
     let currentDate = new Date(lastGenerated);
-    
+
     // Incrementar data conforme frequência
     if (frequencyDays === 30) {
       // Para mensal, incrementa o mês mantendo o mesmo dia
@@ -140,7 +140,7 @@ export class RecurringTransactionsService {
     // Update recurring rule with last_generated_date and next_generation_date
     const lastTransactionDate = transactions[transactions.length - 1].date;
     const nextDate = new Date(lastTransactionDate);
-    
+
     // Incrementar data conforme frequência
     if (frequencyDays === 30) {
       // Para mensal, incrementa o mês mantendo o mesmo dia
@@ -153,7 +153,7 @@ export class RecurringTransactionsService {
       .from('recurring_transactions')
       .update({
         last_generated_date: lastTransactionDate,
-        next_generation_date: nextDate <= endDate 
+        next_generation_date: nextDate <= endDate
           ? nextDate.toISOString().split('T')[0]
           : null
       })
@@ -169,7 +169,7 @@ export class RecurringTransactionsService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     date.setHours(0, 0, 0, 0);
-    
+
     return date <= today ? 'pending' : 'scheduled';
   }
 
