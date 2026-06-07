@@ -28,6 +28,8 @@ import fiscalRoutes from "./routes/fiscal.routes";
 import purchaseProductsRoutes from "./routes/purchase-products.routes";
 import purchaseSuppliersRoutes from "./routes/purchase-suppliers.routes";
 import purchaseOrdersRoutes from "./routes/purchase-orders.routes";
+import hrEmployeesRoutes from "./routes/hr-employees.routes";
+import hrPayrollRoutes from "./routes/hr-payroll.routes";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { startNotificationsCron } from "./jobs/notifications.job";
 import { startWhatsAppJobs } from "./jobs/whatsapp.job";
@@ -98,6 +100,8 @@ app.use("/api/cash-sessions", cashSessionsRoutes);
 app.use("/api/fiscal", fiscalRoutes);
 app.use("/api/purchase-products", purchaseProductsRoutes);
 app.use("/api/purchase-suppliers", purchaseSuppliersRoutes);
+app.use("/api/hr/employees", hrEmployeesRoutes);
+app.use("/api/hr/payroll", hrPayrollRoutes);
 app.use("/api/purchase-orders", purchaseOrdersRoutes);
 
 // Error handlers
@@ -140,7 +144,7 @@ app.listen(PORT, () => {
 
     // Iniciar cron job de resumo diário
     startDailySummaryJob();
-    
+
     // Iniciar cron job de transações recorrentes
     startRecurringTransactionsJob();
   }
