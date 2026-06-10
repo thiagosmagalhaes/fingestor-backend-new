@@ -101,9 +101,6 @@ export class HrEmployeesController {
             if (!body.nomeCompleto || body.nomeCompleto.trim().length === 0) {
                 return res.status(400).json({ error: 'nomeCompleto is required' });
             }
-            if (!body.cpf) {
-                return res.status(400).json({ error: 'cpf is required' });
-            }
             if (body.tipoContrato && !VALID_CONTRACT_TYPES.includes(body.tipoContrato)) {
                 return res.status(400).json({ error: `tipoContrato must be one of: ${VALID_CONTRACT_TYPES.join(', ')}` });
             }

@@ -15,7 +15,7 @@ export interface Colaborador {
     empresa_id: string;
     auth_user_id: string | null;
     nome_completo: string;
-    cpf: string;           // digits only
+    cpf: string | null;    // digits only
     email: string | null;
     cargo: string | null;
     departamento: string | null;
@@ -35,7 +35,7 @@ export interface Colaborador {
 export interface CreateColaboradorRequest {
     companyId: string;
     nomeCompleto: string;
-    cpf: string;
+    cpf?: string;
     email?: string;
     cargo?: string;
     departamento?: string;

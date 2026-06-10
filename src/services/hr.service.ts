@@ -236,7 +236,7 @@ export class HrService {
         companyId: string,
         payload: {
             nomeCompleto: string;
-            cpf: string;
+            cpf?: string;
             email?: string;
             cargo?: string;
             departamento?: string;
@@ -249,8 +249,8 @@ export class HrService {
             chavePix?: string;
         },
     ) {
-        const cpf = normalizeCpf(payload.cpf);
-        if (!validateCpf(cpf)) {
+        const cpf = payload.cpf?.trim() ? normalizeCpf(payload.cpf) : null;
+        if (cpf !== null && !validateCpf(cpf)) {
             throw Object.assign(new Error('CPF inválido'), { statusCode: 400 });
         }
 
