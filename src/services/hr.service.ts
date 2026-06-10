@@ -49,6 +49,24 @@ export function competenciaToDate(competencia: string): string {
 
 export class HrService {
 
+    async getCompanyDisplayName(companyId: string): Promise<string> {
+        const { data: company, error } = await supabaseAdmin
+            .from('companies')
+            .select('id, name')
+            .eq('id', companyId)
+            .maybeSingle();
+
+        if (error) {
+            throw error;
+        }
+
+        if (!company) {
+            throw Object.assign(new Error('Empresa não encontrada'), { statusCode: 404 });
+        }
+
+        return company.name || 'Empresa';
+    }
+
     async resolveManagerCompanyId(authUserId: string): Promise<string> {
         const companyIds = new Set<string>();
 

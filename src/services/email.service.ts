@@ -16,6 +16,7 @@ export class EmailService {
   private newsletterTemplate: string;
   private dailySummaryTemplate: string;
   private supportTemplate: string;
+  private portalAccessTemplate: string;
 
   constructor() {
     this.apiKey = process.env.RESEND_API_KEY || '';
@@ -53,6 +54,16 @@ export class EmailService {
     } catch (error) {
       console.error('❌ Erro ao carregar template de suporte:', error);
       this.supportTemplate = '';
+    }
+
+    // Carregar template HTML de acesso ao portal do colaborador
+    try {
+      const templatePath = path.join(__dirname, '../../templates/hr-portal-access-layout.html');
+      this.portalAccessTemplate = fs.readFileSync(templatePath, 'utf-8');
+      this.portalAccessTemplate = this.portalAccessTemplate.replace(/{{year}}/g, new Date().getFullYear().toString());
+    } catch (error) {
+      console.error('❌ Erro ao carregar template de acesso ao portal:', error);
+      this.portalAccessTemplate = '';
     }
   }
 
@@ -199,6 +210,7 @@ export class EmailService {
       to: string[];
       subject: string;
       html: string;
+      text?: string;
     },
     retries: number = 3,
     delay: number = 1000
@@ -251,6 +263,107 @@ export class EmailService {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /**
+   * Envia email com credenciais de acesso ao portal do colaborador.
+   */
+  async sendEmployeePortalAccessEmail(params: {
+    to: string;
+    employeeName: string;
+    companyName: string;
+    portalUrl: string;
+    loginEmail: string;
+    temporaryPassword: string;
+  }): Promise<{ success: boolean; messageId?: string; error?: any }> {
+    try {
+      const {
+        to,
+        employeeName,
+        companyName,
+        portalUrl,
+        loginEmail,
+        temporaryPassword,
+      } = params;
+
+      if (!this.apiKey) {
+        console.log('📧 [MODO DEV] Email de acesso ao portal não enviado (sem API key):', {
+          to,
+          companyName,
+        });
+        return { success: true, messageId: 'dev-mode-skip' };
+      }
+
+      const safeEmployeeName = this.escapeHtml(employeeName || 'Colaborador');
+      const safeCompanyName = this.escapeHtml(companyName || 'sua empresa');
+      const safePortalUrl = this.escapeHtml(portalUrl);
+      const safeLoginEmail = this.escapeHtml(loginEmail);
+      const safeTemporaryPassword = this.escapeHtml(temporaryPassword);
+
+      const subject = `Acesso ao portal liberado - ${companyName}`;
+
+      const htmlTemplate = this.portalAccessTemplate || `
+        <html>
+          <body style="font-family:Arial,Helvetica,sans-serif;color:#111827;">
+            <h2>Acesso ao portal liberado</h2>
+            <p>Ola {{employeeName}},</p>
+            <p>Seu acesso ao portal do colaborador da empresa <strong>{{companyName}}</strong> foi criado.</p>
+            <p><strong>URL:</strong> <a href="{{portalUrl}}">{{portalUrl}}</a></p>
+            <p><strong>Login:</strong> {{loginEmail}}</p>
+            <p><strong>Senha temporaria:</strong> {{temporaryPassword}}</p>
+            <p>Por seguranca, altere sua senha apos o primeiro login.</p>
+          </body>
+        </html>
+      `;
+
+      const html = htmlTemplate
+        .replace(/{{employeeName}}/g, safeEmployeeName)
+        .replace(/{{companyName}}/g, safeCompanyName)
+        .replace(/{{portalUrl}}/g, safePortalUrl)
+        .replace(/{{loginEmail}}/g, safeLoginEmail)
+        .replace(/{{temporaryPassword}}/g, safeTemporaryPassword);
+
+      const text = [
+        `Ola ${employeeName},`,
+        '',
+        `Seu acesso ao portal de colaborador da empresa ${companyName} foi criado com sucesso.`,
+        '',
+        'Dados de acesso:',
+        `URL: ${portalUrl}`,
+        `Login: ${loginEmail}`,
+        `Senha temporaria: ${temporaryPassword}`,
+        '',
+        'Por seguranca, altere sua senha apos o primeiro login.',
+      ].join('\n');
+
+      const result = await this.sendWithRetry({
+        from: this.fromEmail,
+        to: [to],
+        subject,
+        html,
+        text,
+      });
+
+      if (!result.success) {
+        console.error('❌ Erro ao enviar email de acesso ao portal:', result.error);
+        return { success: false, error: result.error };
+      }
+
+      console.log('✅ Email de acesso ao portal enviado:', result.messageId);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error('❌ Erro ao enviar email de acesso ao portal:', error);
+      return { success: false, error };
+    }
   }
 
   /**

@@ -9,7 +9,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test:newsletter": "tsx scripts/test-newsletter.ts",
-    "test:trial-job": "tsx scripts/test-trial-job.ts"
+    "test:trial-job": "tsx scripts/test-trial-job.ts",
+    "test:hr-portal-email": "tsx scripts/test-hr-portal-access-email.ts"
   },
   "keywords": [
     "financial",

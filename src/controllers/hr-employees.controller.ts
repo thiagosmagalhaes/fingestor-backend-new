@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getSupabaseClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { EmailService } from '../services/email.service';
 import hrService from '../services/hr.service';
 import {
     CreateColaboradorRequest,
@@ -13,6 +14,12 @@ const VALID_CONTRACT_TYPES: HrContractType[] = ['CLT', 'PJ', 'intern'];
 const VALID_STATUSES: HrEmployeeStatus[] = ['active', 'inactive', 'on_leave'];
 
 export class HrEmployeesController {
+    private emailService: EmailService;
+
+    constructor() {
+        this.emailService = new EmailService();
+    }
+
     private resolveCompanyId(req: Request, fallbackCompanyId?: string): string | undefined {
         const bodyCompanyId = (req.body as { companyId?: string } | undefined)?.companyId;
         const queryCompanyId = (req.query as { companyId?: string } | undefined)?.companyId;
@@ -242,7 +249,34 @@ export class HrEmployeesController {
             await hrService.ensureCompanyAccessProfile(authReq.user!.id, companyId);
             const data = await hrService.createPortalAccess(id, companyId, email.trim(), password);
 
-            return res.json(data);
+            const companyName = await hrService.getCompanyDisplayName(companyId);
+            const employeeName = data?.nome_completo || 'Colaborador';
+            const baseFrontendUrl = process.env.FRONTEND_URL?.replace(/\/$/, '');
+            const portalUrl = `${baseFrontendUrl}/portal-colaborador`;
+
+            let portalAccessEmailSent = false;
+            if (portalUrl) {
+                const emailResult = await this.emailService.sendEmployeePortalAccessEmail({
+                    to: email.trim(),
+                    employeeName,
+                    companyName,
+                    portalUrl,
+                    loginEmail: email.trim(),
+                    temporaryPassword: password,
+                });
+                portalAccessEmailSent = emailResult.success;
+
+                if (!emailResult.success) {
+                    console.error('Failed to send portal access email:', emailResult.error);
+                }
+            } else {
+                console.warn('HR_PORTAL_URL and FRONTEND_URL are not configured. Portal access email was not sent.');
+            }
+
+            return res.json({
+                ...data,
+                portalAccessEmailSent,
+            });
         } catch (error: any) {
             const status = error.statusCode ?? 500;
             console.error('Error in HrEmployeesController.createPortalAccess:', error);
