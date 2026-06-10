@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getSupabaseClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import hrService from '../services/hr.service';
 
 interface CreateCompanyRequest {
   name: string;
@@ -205,6 +206,13 @@ export class CompaniesController {
       if (error) {
         console.error('Error creating company:', error);
         throw error;
+      }
+
+      try {
+        await hrService.ensureCompanyAccessProfile(user.id, company.id);
+      } catch (profileError) {
+        console.error('Error creating HR access profile:', profileError);
+        throw profileError;
       }
 
       // Criar categorias default após criar a empresa
