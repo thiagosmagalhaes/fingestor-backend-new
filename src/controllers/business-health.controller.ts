@@ -68,8 +68,8 @@ export class BusinessHealthController {
   /**
    * GET /api/business-health?companyId=xxx&from=YYYY-MM-DD&to=YYYY-MM-DD
    * Retorna uma visão 360 da saúde financeira do negócio: faturamento
-   * (incluindo acumulado dos últimos 12 meses), lucratividade, composição
-   * de custos (COGS/despesa e fixo/variável) e um health score 0-100.
+   * (dentro do período filtrado, padrão últimos 12 meses), lucratividade,
+   * composição de custos (COGS/despesa e fixo/variável) e um health score 0-100.
    */
   async getBusinessHealth(req: Request, res: Response): Promise<Response | void> {
     try {
@@ -87,15 +87,16 @@ export class BusinessHealthController {
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
-      const [healthResult, cashFlowResult] = await Promise.all([
+      const [healthResult, monthlyResult] = await Promise.all([
         supabaseClient.rpc("get_business_health_data", {
           p_company_id: companyId,
           p_start_date: startDate.toISOString(),
           p_end_date: endDate.toISOString(),
         }),
-        supabaseClient.rpc("get_cash_flow_chart_data", {
+        supabaseClient.rpc("get_business_health_monthly_breakdown", {
           p_company_id: companyId,
-          p_months: 12,
+          p_start_date: startDate.toISOString().substring(0, 10),
+          p_end_date: endDate.toISOString().substring(0, 10),
         }),
       ]);
 
@@ -103,13 +104,16 @@ export class BusinessHealthController {
         console.error("Error calling get_business_health_data:", healthResult.error);
         throw healthResult.error;
       }
-      if (cashFlowResult.error) {
-        console.error("Error calling get_cash_flow_chart_data:", cashFlowResult.error);
-        throw cashFlowResult.error;
+      if (monthlyResult.error) {
+        console.error(
+          "Error calling get_business_health_monthly_breakdown:",
+          monthlyResult.error,
+        );
+        throw monthlyResult.error;
       }
 
       const data: BusinessHealthRPCResult = healthResult.data;
-      const monthly: CashFlowRPCResult[] = cashFlowResult.data || [];
+      const monthly: CashFlowRPCResult[] = monthlyResult.data || [];
 
       const response = this.buildResponse(startDate, endDate, data, monthly);
 
@@ -159,7 +163,7 @@ export class BusinessHealthController {
     const grossMargin = receitas > 0 ? (grossProfit / receitas) * 100 : 0;
     const netMargin = receitas > 0 ? (netProfit / receitas) * 100 : 0;
 
-    // RBT12 e tendência a partir da série mensal (últimos 12 meses, sempre fixo)
+    // RBT12 e tendência a partir da série mensal do período filtrado (padrão: últimos 12 meses)
     const last12MonthsRevenue = monthly.reduce(
       (sum, m) => sum + Number(m.receitas || 0),
       0,

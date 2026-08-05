@@ -21,7 +21,7 @@ It does not replace the existing dashboard endpoints (`/api/dashboard/summary`, 
 | `from` | No | `YYYY-MM-DD` | Start of the period. Defaults to 12 months before `to`. |
 | `to` | No | `YYYY-MM-DD` | End of the period. Defaults to today. |
 
-If `from`/`to` are omitted entirely, the endpoint defaults to the **trailing 12 months**. Note that `revenue.last12Months` (used as a Simples Nacional RBT12-style indicator) is **always** the trailing 12 months from today, regardless of what `from`/`to` you pass — it does not follow a custom period.
+If `from`/`to` are omitted entirely, the endpoint defaults to the **trailing 12 months**. All figures in the response — including `revenue.last12Months` and `revenue.trend` — are computed over the resolved `from`/`to` period; there is no longer a fixed "always trailing 12 months from today" figure. When you pass a custom `from`/`to`, `revenue.last12Months` reflects that custom period (same value as `revenue.total`), not a separate trailing-12-months number.
 
 ```bash
 # Default period (last 12 months)
@@ -40,10 +40,10 @@ curl -X GET "https://your-api/api/business-health?companyId=<company-id>&from=20
   "period": { "from": "2025-08-05", "to": "2026-08-04" },
   "revenue": {
     "total": 120000.00,        // revenue within the requested period
-    "last12Months": 120000.00, // always trailing 12 months, ignores custom `from`/`to`
+    "last12Months": 120000.00, // revenue within the requested period (same as `total`; defaults to trailing 12 months when no `from`/`to` is passed)
     "trend": {
-      "currentAvg": 11000.00,   // avg monthly revenue, last 3 months
-      "previousAvg": 9500.00,   // avg monthly revenue, the 3 months before that
+      "currentAvg": 11000.00,   // avg monthly revenue, last 3 months of the requested period
+      "previousAvg": 9500.00,   // avg monthly revenue, the 3 months before that (within the requested period)
       "changePercent": 15.8
     }
   },
@@ -149,7 +149,7 @@ Bucket definitions live in `src/controllers/business-health.controller.ts` (`PRO
 
 ### Revenue Card
 
-- Headline `revenue.last12Months` as the "faturamento últimos 12 meses" figure — this is the number relevant to Simples Nacional bracket/teto monitoring, so it should be visible regardless of which period the user has selected in the UI.
+- Headline `revenue.last12Months` as the period revenue figure — with the default (no `from`/`to`) it's the trailing-12-months number relevant to Simples Nacional bracket/teto monitoring; with a custom period selected, it reflects that period instead (same value as `revenue.total`).
 - Use `revenue.trend.changePercent` for a small up/down indicator (arrow + %) next to the period revenue. Positive = green/up, negative = red/down.
 
 ### Cost Composition
@@ -165,7 +165,7 @@ Bucket definitions live in `src/controllers/business-health.controller.ts` (`PRO
 
 ### Period Selector
 
-- Default the screen to no `from`/`to` (trailing 12 months). If you add a period picker (e.g., "últimos 3 meses", "este ano", custom range), pass the resolved dates as `from`/`to` — everything in the response except `revenue.last12Months` will respect that custom range.
+- Default the screen to no `from`/`to` (trailing 12 months). If you add a period picker (e.g., "últimos 3 meses", "este ano", custom range), pass the resolved dates as `from`/`to` — everything in the response, including `revenue.last12Months`, respects that custom range.
 - When a custom period is very short (e.g., a single week), `profitability` and `costs` will reflect just that window — consider a minimum-period hint in the UI (e.g., "recomendamos pelo menos 1 mês para uma leitura confiável") since the health score's growth component compares monthly averages and is less meaningful over very short windows.
 
 ---
