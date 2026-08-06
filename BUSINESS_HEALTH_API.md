@@ -63,7 +63,7 @@ curl -X GET "https://your-api/api/business-health?companyId=<company-id>&from=20
     "netMargin": 41.7          // %
   },
   "risk": {
-    "overdueAmount": 3200.00,        // pending/scheduled expenses past their date
+    "overdueAmount": 3200.00,        // pending/scheduled expenses whose date is before the end of the requested period (or today, whichever comes first)
     "overdueRatio": 0.045,           // overdueAmount / (totalCosts + totalExpenses)
     "expenseConcentration": 25.7     // % of total costs+expenses in the single largest category
   },
@@ -75,11 +75,55 @@ curl -X GET "https://your-api/api/business-health?companyId=<company-id>&from=20
       "growth": { "value": 66, "label": "Estável, leve alta" },
       "risk": { "value": 90, "label": "Baixo risco" }
     }
+  },
+  "previousPeriod": {
+    "from": "2024-08-05",
+    "to": "2025-08-04",
+    "revenue": 98000.00,
+    "costs": 35000.00,
+    "expenses": 28000.00,
+    "grossProfit": 63000.00,
+    "netProfit": 35000.00,
+    "grossMargin": 64.3,
+    "netMargin": 35.7,
+    "overdueAmount": 2100.00    // overdue as of the end of the PREVIOUS period, not "as of today"
+  },
+  "comparison": {
+    "revenue": { "current": 120000.00, "previous": 98000.00, "changeAbsolute": 22000.00, "changePercent": 22.4 },
+    "costs": { "current": 40000.00, "previous": 35000.00, "changeAbsolute": 5000.00, "changePercent": 14.3 },
+    "expenses": { "current": 30000.00, "previous": 28000.00, "changeAbsolute": 2000.00, "changePercent": 7.1 },
+    "grossProfit": { "current": 80000.00, "previous": 63000.00, "changeAbsolute": 17000.00, "changePercent": 27.0 },
+    "netProfit": { "current": 50000.00, "previous": 35000.00, "changeAbsolute": 15000.00, "changePercent": 42.9 },
+    "netMargin": { "current": 41.7, "previous": 35.7, "changeAbsolute": 6.0, "changePercent": 16.8 },
+    "overdueAmount": { "current": 3200.00, "previous": 2100.00, "changeAbsolute": 1100.00, "changePercent": 52.4 }
   }
 }
 ```
 
+### Previous-Period Comparison
+
+`previousPeriod` and `comparison` compare the requested period against the **immediately preceding period of the same length** — e.g., a 1-month window (`2026-07-01`–`2026-07-31`) compares against June; a full-year window compares against the prior year; a custom 45-day window compares against the 45 days right before it. This is computed automatically on every request (no extra query param needed) using the same `get_business_health_data` RPC, just with shifted `from`/`to` dates.
+
+- `previousPeriod` mirrors the core financial figures (`revenue`, `costs`, `expenses`, `grossProfit`, `netProfit`, `grossMargin`, `netMargin`) for that prior window, plus its own resolved `from`/`to`.
+- `comparison` gives one `{ current, previous, changeAbsolute, changePercent }` object per metric (`revenue`, `costs`, `expenses`, `grossProfit`, `netProfit`, `netMargin`) — `changePercent` is `0` when `previous` is `0` (avoids division by zero for brand-new companies). For `netMargin`, `changeAbsolute` is in percentage points (e.g., `6.0` = margin grew from 35.7% to 41.7%), while `changePercent` is the relative change of the margin value itself — prefer `changeAbsolute` for margin, since "percentage change of a percentage" reads oddly in UI copy.
+- This is separate from `revenue.trend`, which stays a narrower, always-monthly comparison (last 3 months vs. prior 3 months) used specifically to feed the health score's `growth` component — it does not shift when a custom period is passed the way `previousPeriod`/`comparison` do.
+
 Note: `costs.topCategories` mixes COGS and operating-expense categories together (unlike the DRE endpoint, which splits them) — it's used purely to compute and display expense concentration.
+
+---
+
+## Status & Date Semantics
+
+All filtering by `transactions.status`/`type`/`categories.nature` happens inside the Postgres RPCs (`get_business_health_data`, `get_business_health_monthly_breakdown` — see `supabase/migrations/`), not in the controller. This is the authoritative mapping:
+
+| Field(s) | `status` | `type` | Date column | Notes |
+|---|---|---|---|---|
+| `revenue.*`, `costs.totalCosts`, `costs.totalExpenses`, `costs.fixed`, `costs.variable`, `costs.topCategories`, `profitability.*`, `previousPeriod.revenue/costs/expenses/grossProfit/netProfit/*Margin` | `paid` only | `income` / `expense` | `date` (transaction/purchase date) | Realized (accrual) figures. `costs.totalCosts` further requires `categories.nature = 'COST'`; `costs.totalExpenses` requires `nature = 'EXPENSE'` or no category. `investment` is never included. |
+| `risk.overdueAmount`, `previousPeriod.overdueAmount`, `comparison.overdueAmount` | `pending` or `scheduled` | `expense` only | `date < LEAST(period end, today)` | Not paid yet, and its date has already passed the end of the requested period (or today, whichever is earlier) — i.e., "vencido dentro do período". No lower bound: it includes anything overdue as of that point in time, not just debts dated inside the period. |
+
+**Important — this endpoint intentionally uses `date`, not `payment_date`, for `status = 'paid'` figures.** This matches `/api/dashboard/dre` (same `date`-based filtering), so revenue/cost/expense/profitability numbers here reconcile with the DRE screen. It **does not** match `/api/dashboard/summary` or `/api/dashboard/cash-flow`, which filter by `COALESCE(payment_date, date)` — the date money actually moved. For a normal expense these are usually the same day, but for a **credit-card purchase**, `date` is the original purchase date while `payment_date` is set only when the invoice is paid (often the following month). So a company that pays with credit cards can see different revenue/cost totals for the same month between this endpoint (and DRE) vs. Dashboard Summary/Cash Flow — this is expected, not a bug. If you're building a screen that shows both side by side, consider a short note explaining the difference, or pick one convention to surface consistently.
+
+`risk.overdueAmount` also has a narrower scope than `/api/dashboard/overdue`: it only counts **expenses** (not income) and does not exclude credit-card transactions. Don't assume the two numbers match.
 
 ---
 
@@ -151,6 +195,7 @@ Bucket definitions live in `src/controllers/business-health.controller.ts` (`PRO
 
 - Headline `revenue.last12Months` as the period revenue figure — with the default (no `from`/`to`) it's the trailing-12-months number relevant to Simples Nacional bracket/teto monitoring; with a custom period selected, it reflects that period instead (same value as `revenue.total`).
 - Use `revenue.trend.changePercent` for a small up/down indicator (arrow + %) next to the period revenue. Positive = green/up, negative = red/down.
+- For a "vs. período anterior" comparison (any metric, not just revenue), use `comparison.*` instead — e.g., `comparison.revenue.changePercent` compares the whole selected period against the equivalent prior period (same length, immediately before), unlike `revenue.trend` which is always a fixed 3-month-vs-3-month comparison regardless of the selected range.
 
 ### Cost Composition
 
@@ -160,8 +205,9 @@ Bucket definitions live in `src/controllers/business-health.controller.ts` (`PRO
 
 ### Risk / Overdue
 
-- Show `risk.overdueAmount` as a warning callout when > 0, similar to the existing `/api/dashboard/overdue` widget.
+- Show `risk.overdueAmount` as a warning callout when > 0. Note it's scoped to expenses only and isn't the exact same number as `/api/dashboard/overdue` (see "Status & Date Semantics" above) — don't assume they'll match if shown on the same screen.
 - `risk.overdueRatio` is a fraction (e.g., `0.045` = 4.5%) — multiply by 100 for display.
+- `risk.overdueAmount` is now bound to the requested period (overdue as of the period's end date, or today if the period includes today) — filtering to a past period no longer shows today's overdue amount. Use `comparison.overdueAmount` for a "vs. período anterior" indicator.
 
 ### Period Selector
 
@@ -173,6 +219,8 @@ Bucket definitions live in `src/controllers/business-health.controller.ts` (`PRO
 ## Edge Cases & Considerations
 
 - **New companies with little/no data:** all totals will be `0`, `netMargin`/`grossMargin` will be `0` (division by zero is guarded server-side), and `healthScore.score` will land around 50 (neutral) rather than 0 — don't interpret a fresh company as "critico".
+- **No data in the previous period** (new company, or period predates the company's first transaction): `previousPeriod` fields will be `0`, and every `comparison.*.changePercent` will be `0` (guarded against division by zero) even though `changeAbsolute` may be large — prefer showing "sem dados no período anterior" instead of a misleading "0%" when `comparison.revenue.previous === 0`.
+- **Filtering to a period entirely in the past:** `risk.overdueAmount` reflects what was overdue as of the end of that period, not what's overdue today. Two different `from`/`to` ranges ending on different dates will (correctly) show different `overdueAmount` values even if nothing about the company's current unpaid bills has changed since.
 - **Investment transactions:** exactly like the rest of the dashboard, `type = 'investment'` transactions are excluded from every metric on this endpoint (revenue, costs, expenses, risk). Only `income`/`expense` transactions with `status = 'paid'` feed the totals (except `risk.overdueAmount`, which looks at `pending`/`scheduled` expenses).
 - **`fixed`/`variable` heuristic:** an expense counts as "fixed" only if it's tied to an *active* recurring rule at the time it was generated (`recurring_transaction_id` is set). A rent payment entered manually one month (not generated by the recurrence engine) will count as "variable" for that month — this is a heuristic, not a user-editable classification, so avoid wording in the UI that implies the user tagged it themselves.
 - **Company type (`empresa`/`pessoal`):** this endpoint intentionally does not branch on `companies.type` — the same response shape and logic apply to both, since tax payments and other pessoa-física-specific entries already flow through `transactions` like anything else.

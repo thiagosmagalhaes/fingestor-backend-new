@@ -4,8 +4,10 @@ import { AuthRequest } from "../middleware/auth";
 import {
   BusinessHealthResponse,
   BusinessHealthRPCResult,
+  ComparisonMetric,
   HealthScoreComponent,
   HealthStatus,
+  PeriodFinancials,
 } from "../types/business-health.types";
 import { CashFlowRPCResult } from "../types/dashboard.types";
 
@@ -70,6 +72,22 @@ export class BusinessHealthController {
    * Retorna uma visão 360 da saúde financeira do negócio: faturamento
    * (dentro do período filtrado, padrão últimos 12 meses), lucratividade,
    * composição de custos (COGS/despesa e fixo/variável) e um health score 0-100.
+   *
+   * Toda a diferenciação por `status`/`type`/`nature` da tabela `transactions`
+   * acontece nas RPCs do Postgres (get_business_health_data e
+   * get_business_health_monthly_breakdown, em supabase/migrations/) — este
+   * controller só faz aritmética sobre os totais já agregados. Resumo (fonte de
+   * verdade é o comentário em cada bloco de SQL das RPCs):
+   * - `status = 'paid'` → já realizado, usado para receitas/custos/despesas.
+   *   Filtra pela coluna `date` (data da transação), mesma convenção da DRE —
+   *   propositalmente diferente de Dashboard Summary/Cash Flow, que usam
+   *   `payment_date` (data em que o dinheiro efetivamente movimentou; relevante
+   *   para cartão de crédito). Números podem não bater 1:1 entre este endpoint
+   *   e o Dashboard para empresas que usam cartão — isso é esperado.
+   * - `status IN ('pending', 'scheduled')` + data já passada → "vencido", usado
+   *   só em `risk.overdueAmount`. Limitado ao fim do período consultado (ou
+   *   hoje, o que vier primeiro) — não é mais "vencido até hoje" fixo.
+   * - `type = 'investment'` nunca entra em nenhum total (só income/expense).
    */
   async getBusinessHealth(req: Request, res: Response): Promise<Response | void> {
     try {
@@ -84,10 +102,14 @@ export class BusinessHealthController {
         typeof from === "string" ? from : undefined,
         typeof to === "string" ? to : undefined,
       );
+      const { previousStartDate, previousEndDate } = this.resolvePreviousPeriod(
+        startDate,
+        endDate,
+      );
 
       const supabaseClient = getSupabaseClient(authReq.accessToken!);
 
-      const [healthResult, monthlyResult] = await Promise.all([
+      const [healthResult, monthlyResult, previousHealthResult] = await Promise.all([
         supabaseClient.rpc("get_business_health_data", {
           p_company_id: companyId,
           p_start_date: startDate.toISOString(),
@@ -97,6 +119,11 @@ export class BusinessHealthController {
           p_company_id: companyId,
           p_start_date: startDate.toISOString().substring(0, 10),
           p_end_date: endDate.toISOString().substring(0, 10),
+        }),
+        supabaseClient.rpc("get_business_health_data", {
+          p_company_id: companyId,
+          p_start_date: previousStartDate.toISOString(),
+          p_end_date: previousEndDate.toISOString(),
         }),
       ]);
 
@@ -111,11 +138,27 @@ export class BusinessHealthController {
         );
         throw monthlyResult.error;
       }
+      if (previousHealthResult.error) {
+        console.error(
+          "Error calling get_business_health_data (previous period):",
+          previousHealthResult.error,
+        );
+        throw previousHealthResult.error;
+      }
 
       const data: BusinessHealthRPCResult = healthResult.data;
       const monthly: CashFlowRPCResult[] = monthlyResult.data || [];
+      const previousData: BusinessHealthRPCResult = previousHealthResult.data;
 
-      const response = this.buildResponse(startDate, endDate, data, monthly);
+      const response = this.buildResponse(
+        startDate,
+        endDate,
+        data,
+        monthly,
+        previousStartDate,
+        previousEndDate,
+        previousData,
+      );
 
       res.json(response);
     } catch (error) {
@@ -124,24 +167,90 @@ export class BusinessHealthController {
     }
   }
 
+  // Datas em UTC explícito (não hora local do processo Node) — as colunas `date`
+  // da tabela transactions são DATE puro, sem timezone, e o Postgres/Supabase as
+  // interpreta como meia-noite UTC ao comparar com um TIMESTAMPTZ. Se essas
+  // fronteiras fossem calculadas em hora local do servidor (comportamento do
+  // `new Date("YYYY-MM-DDTHH:mm:ss")` sem sufixo "Z"), um servidor rodando fora
+  // de UTC deslocaria o início/fim do período em algumas horas, cortando ou
+  // incluindo indevidamente transações na borda — efeito mais visível em
+  // períodos customizados curtos (poucos dias).
   private resolvePeriod(
     from?: string,
     to?: string,
   ): { startDate: Date; endDate: Date } {
-    const endDate = to ? new Date(`${to}T23:59:59.999`) : new Date();
-    endDate.setHours(23, 59, 59, 999);
+    const endDate = to ? new Date(`${to}T23:59:59.999Z`) : new Date();
+    if (!to) {
+      endDate.setUTCHours(23, 59, 59, 999);
+    }
 
     let startDate: Date;
     if (from) {
-      startDate = new Date(`${from}T00:00:00.000`);
+      startDate = new Date(`${from}T00:00:00.000Z`);
     } else {
       startDate = new Date(endDate);
-      startDate.setFullYear(startDate.getFullYear() - 1);
-      startDate.setDate(startDate.getDate() + 1);
-      startDate.setHours(0, 0, 0, 0);
+      startDate.setUTCFullYear(startDate.getUTCFullYear() - 1);
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
+      startDate.setUTCHours(0, 0, 0, 0);
     }
 
     return { startDate, endDate };
+  }
+
+  // Período de mesma duração imediatamente anterior ao período resolvido —
+  // ex.: período de 1 mês compara com o mês anterior, 1 ano compara com o ano anterior.
+  private resolvePreviousPeriod(
+    startDate: Date,
+    endDate: Date,
+  ): { previousStartDate: Date; previousEndDate: Date } {
+    const periodMs = endDate.getTime() - startDate.getTime();
+    const previousEndDate = new Date(startDate.getTime() - 1);
+    const previousStartDate = new Date(previousEndDate.getTime() - periodMs);
+
+    return { previousStartDate, previousEndDate };
+  }
+
+  private calculateFinancials(data: BusinessHealthRPCResult) {
+    const receitas = Number(data?.receitas || 0);
+    const custos = Number(data?.custos || 0);
+    const despesas = Number(data?.despesas || 0);
+    const grossProfit = receitas - custos;
+    const netProfit = receitas - custos - despesas;
+    const grossMargin = receitas > 0 ? (grossProfit / receitas) * 100 : 0;
+    const netMargin = receitas > 0 ? (netProfit / receitas) * 100 : 0;
+
+    return { receitas, custos, despesas, grossProfit, netProfit, grossMargin, netMargin };
+  }
+
+  private buildComparisonMetric(current: number, previous: number): ComparisonMetric {
+    return {
+      current,
+      previous,
+      changeAbsolute: current - previous,
+      changePercent:
+        previous !== 0 ? ((current - previous) / Math.abs(previous)) * 100 : 0,
+    };
+  }
+
+  // risk.overdueAmount/overdueRatio/expenseConcentration a partir dos totais já
+  // agregados pela RPC (ver comentário de status/type/nature no topo da classe).
+  private calculateRisk(
+    data: BusinessHealthRPCResult,
+    custos: number,
+    despesas: number,
+  ): { overdueAmount: number; overdueRatio: number; expenseConcentration: number } {
+    const overdueAmount = Number(data?.total_vencido || 0);
+    const topCategories = data?.despesas_categorias || [];
+    const totalExpensesAndCosts = custos + despesas;
+
+    const overdueRatio =
+      totalExpensesAndCosts > 0 ? overdueAmount / totalExpensesAndCosts : 0;
+    const expenseConcentration =
+      topCategories.length > 0 && totalExpensesAndCosts > 0
+        ? (Number(topCategories[0].total) / totalExpensesAndCosts) * 100
+        : 0;
+
+    return { overdueAmount, overdueRatio, expenseConcentration };
   }
 
   private buildResponse(
@@ -149,19 +258,23 @@ export class BusinessHealthController {
     endDate: Date,
     data: BusinessHealthRPCResult,
     monthly: CashFlowRPCResult[],
+    previousStartDate: Date,
+    previousEndDate: Date,
+    previousData: BusinessHealthRPCResult,
   ): BusinessHealthResponse {
-    const receitas = Number(data?.receitas || 0);
-    const custos = Number(data?.custos || 0);
-    const despesas = Number(data?.despesas || 0);
     const custoFixo = Number(data?.custo_fixo || 0);
     const custoVariavel = Number(data?.custo_variavel || 0);
-    const totalVencido = Number(data?.total_vencido || 0);
     const topCategories = data?.despesas_categorias || [];
 
-    const grossProfit = receitas - custos;
-    const netProfit = receitas - custos - despesas;
-    const grossMargin = receitas > 0 ? (grossProfit / receitas) * 100 : 0;
-    const netMargin = receitas > 0 ? (netProfit / receitas) * 100 : 0;
+    const {
+      receitas,
+      custos,
+      despesas,
+      grossProfit,
+      netProfit,
+      grossMargin,
+      netMargin,
+    } = this.calculateFinancials(data);
 
     // RBT12 e tendência a partir da série mensal do período filtrado (padrão: últimos 12 meses)
     const last12MonthsRevenue = monthly.reduce(
@@ -182,13 +295,8 @@ export class BusinessHealthController {
     const changePercent =
       previousAvg > 0 ? ((currentAvg - previousAvg) / previousAvg) * 100 : 0;
 
-    const totalExpensesAndCosts = custos + despesas;
-    const overdueRatio =
-      totalExpensesAndCosts > 0 ? totalVencido / totalExpensesAndCosts : 0;
-    const expenseConcentration =
-      topCategories.length > 0 && totalExpensesAndCosts > 0
-        ? (Number(topCategories[0].total) / totalExpensesAndCosts) * 100
-        : 0;
+    const { overdueAmount: totalVencido, overdueRatio, expenseConcentration } =
+      this.calculateRisk(data, custos, despesas);
 
     const healthScore = this.calculateHealthScore(
       netMargin,
@@ -196,6 +304,36 @@ export class BusinessHealthController {
       overdueRatio,
       expenseConcentration,
     );
+
+    const previousFinancials = this.calculateFinancials(previousData);
+    // total_vencido da RPC do período anterior já vem limitado ao fim daquele
+    // período (ver comentário no topo da classe) — por isso é um valor próprio
+    // e comparável, não uma repetição do overdueAmount do período atual.
+    const previousOverdueAmount = Number(previousData?.total_vencido || 0);
+    const previousPeriod: PeriodFinancials = {
+      from: previousStartDate.toISOString().substring(0, 10),
+      to: previousEndDate.toISOString().substring(0, 10),
+      revenue: previousFinancials.receitas,
+      costs: previousFinancials.custos,
+      expenses: previousFinancials.despesas,
+      grossProfit: previousFinancials.grossProfit,
+      netProfit: previousFinancials.netProfit,
+      grossMargin: previousFinancials.grossMargin,
+      netMargin: previousFinancials.netMargin,
+      overdueAmount: previousOverdueAmount,
+    };
+    const comparison = {
+      revenue: this.buildComparisonMetric(receitas, previousFinancials.receitas),
+      costs: this.buildComparisonMetric(custos, previousFinancials.custos),
+      expenses: this.buildComparisonMetric(despesas, previousFinancials.despesas),
+      grossProfit: this.buildComparisonMetric(
+        grossProfit,
+        previousFinancials.grossProfit,
+      ),
+      netProfit: this.buildComparisonMetric(netProfit, previousFinancials.netProfit),
+      netMargin: this.buildComparisonMetric(netMargin, previousFinancials.netMargin),
+      overdueAmount: this.buildComparisonMetric(totalVencido, previousOverdueAmount),
+    };
 
     return {
       period: {
@@ -230,6 +368,8 @@ export class BusinessHealthController {
         expenseConcentration,
       },
       healthScore,
+      previousPeriod,
+      comparison,
     };
   }
 
