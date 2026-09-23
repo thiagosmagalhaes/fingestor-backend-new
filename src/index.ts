@@ -37,6 +37,9 @@ import { startWhatsAppJobs } from "./jobs/whatsapp.job";
 import { startTrialExpiringJob } from "./jobs/trial-expiring.job";
 import { startDailySummaryJob } from "./jobs/daily-summary.job";
 import { startRecurringTransactionsJob } from "./jobs/recurring-transactions.job";
+import apiKeysRoutes from "./routes/api-keys.routes";
+import integrationRoutes from "./routes/integration.routes";
+import openapiRoutes from "./routes/openapi.routes";
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -104,6 +107,9 @@ app.use("/api/purchase-products", purchaseProductsRoutes);
 app.use("/api/purchase-suppliers", purchaseSuppliersRoutes);
 app.use("/api/hr/employees", hrEmployeesRoutes);
 app.use("/api/hr/payroll", hrPayrollRoutes);
+app.use("/api/api-keys", apiKeysRoutes);
+app.use("/api/v1", integrationRoutes);
+app.use("/api/v1", openapiRoutes);
 app.use("/api/purchase-orders", purchaseOrdersRoutes);
 
 // Error handlers

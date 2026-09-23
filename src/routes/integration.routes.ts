@@ -1,0 +1,10 @@
+import { Router } from 'express';
+import controller from '../controllers/integration.controller';
+import { apiKeyMiddleware, requireApiKeyPermission } from '../middleware/apiKey';
+const router = Router(); router.use(apiKeyMiddleware);
+router.get('/categories', requireApiKeyPermission('read'), (req,res)=>controller.categories(req,res));
+router.get('/transactions', requireApiKeyPermission('read'), (req,res)=>controller.list(req,res));
+router.post('/transactions', requireApiKeyPermission('create'), (req,res)=>controller.create(req,res));
+router.put('/transactions/:id', requireApiKeyPermission('update'), (req,res)=>controller.update(req,res));
+router.delete('/transactions/:id', requireApiKeyPermission('delete'), (req,res)=>controller.remove(req,res));
+export default router;
