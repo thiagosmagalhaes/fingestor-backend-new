@@ -108,8 +108,8 @@ app.use("/api/purchase-suppliers", purchaseSuppliersRoutes);
 app.use("/api/hr/employees", hrEmployeesRoutes);
 app.use("/api/hr/payroll", hrPayrollRoutes);
 app.use("/api/api-keys", apiKeysRoutes);
-app.use("/api/v1", integrationRoutes);
 app.use("/api/v1", openapiRoutes);
+app.use("/api/v1", integrationRoutes);
 app.use("/api/purchase-orders", purchaseOrdersRoutes);
 
 // Error handlers
