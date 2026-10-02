@@ -70,7 +70,7 @@ export class BusinessHealthController {
   /**
    * GET /api/business-health?companyId=xxx&from=YYYY-MM-DD&to=YYYY-MM-DD
    * Retorna uma visão 360 da saúde financeira do negócio: faturamento
-   * (dentro do período filtrado, padrão últimos 12 meses), lucratividade,
+   * (dentro do período filtrado, padrão últimos 12 meses até D-1), lucratividade,
    * composição de custos (COGS/despesa e fixo/variável) e um health score 0-100.
    *
    * Toda a diferenciação por `status`/`type`/`nature` da tabela `transactions`
@@ -179,10 +179,20 @@ export class BusinessHealthController {
     from?: string,
     to?: string,
   ): { startDate: Date; endDate: Date } {
-    const endDate = to ? new Date(`${to}T23:59:59.999Z`) : new Date();
-    if (!to) {
-      endDate.setUTCHours(23, 59, 59, 999);
-    }
+    // O dia atual ainda pode estar incompleto e distorcer os indicadores.
+    // O endpoint inteiro usa D-1 como limite superior, inclusive quando o
+    // cliente envia hoje (ou uma data futura) explicitamente.
+    const yesterdayEndDate = new Date();
+    yesterdayEndDate.setUTCHours(0, 0, 0, 0);
+    yesterdayEndDate.setUTCDate(yesterdayEndDate.getUTCDate() - 1);
+    yesterdayEndDate.setUTCHours(23, 59, 59, 999);
+
+    const requestedEndDate = to
+      ? new Date(`${to}T23:59:59.999Z`)
+      : yesterdayEndDate;
+    const endDate = requestedEndDate > yesterdayEndDate
+      ? yesterdayEndDate
+      : requestedEndDate;
 
     let startDate: Date;
     if (from) {
