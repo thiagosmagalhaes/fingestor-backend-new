@@ -6,7 +6,7 @@ import { DRECategoryItem } from "./dashboard.types";
 // - receitas/custos/despesas/custo_fixo/custo_variavel/despesas_categorias somam
 //   apenas transações com status = 'paid' (já realizadas), pela coluna `date`.
 // - total_vencido soma transações com status IN ('pending', 'scheduled') cuja
-//   data já passou (até o fim do período consultado, ou hoje — o que vier primeiro).
+//   data já passou (até o fim do período consultado, limitado a D-1).
 export interface BusinessHealthRPCResult {
   receitas: number;
   custos: number;
@@ -34,7 +34,7 @@ export interface PeriodFinancials {
   netProfit: number;
   grossMargin: number;
   netMargin: number;
-  // Vencido até o fim deste período (ou hoje, o que vier primeiro) — ver
+  // Vencido até o fim deste período, limitado a D-1 — ver
   // BusinessHealthRPCResult.total_vencido.
   overdueAmount: number;
 }

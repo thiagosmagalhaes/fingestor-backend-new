@@ -40,10 +40,10 @@ const GROWTH_LABELS = [
   { min: 0, label: "Queda acentuada de faturamento" },
 ];
 const RISK_LABELS = [
-  { min: 90, label: "Baixo risco" },
-  { min: 70, label: "Risco moderado" },
-  { min: 40, label: "Atenção: atrasos ou concentração de despesas" },
-  { min: 0, label: "Risco alto: revise atrasos e diversifique despesas" },
+  { min: 90, label: "Segurança alta (baixo risco)" },
+  { min: 70, label: "Segurança moderada" },
+  { min: 40, label: "Atenção: risco financeiro moderado" },
+  { min: 0, label: "Risco elevado: revise atrasos e diversifique despesas" },
 ];
 
 function clamp(value: number, min: number, max: number): number {
@@ -85,8 +85,8 @@ export class BusinessHealthController {
    *   para cartão de crédito). Números podem não bater 1:1 entre este endpoint
    *   e o Dashboard para empresas que usam cartão — isso é esperado.
    * - `status IN ('pending', 'scheduled')` + data já passada → "vencido", usado
-   *   só em `risk.overdueAmount`. Limitado ao fim do período consultado (ou
-   *   hoje, o que vier primeiro) — não é mais "vencido até hoje" fixo.
+   *   só em `risk.overdueAmount`. Limitado ao fim do período consultado, com
+   *   teto em D-1 — o dia atual nunca entra no cálculo.
    * - `type = 'investment'` nunca entra em nenhum total (só income/expense).
    */
   async getBusinessHealth(req: Request, res: Response): Promise<Response | void> {

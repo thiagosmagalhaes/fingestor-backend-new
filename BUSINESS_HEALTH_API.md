@@ -19,7 +19,7 @@ It does not replace the existing dashboard endpoints (`/api/dashboard/summary`, 
 |---|---|---|---|
 | `companyId` | Yes | UUID | The company to compute health for. |
 | `from` | No | `YYYY-MM-DD` | Start of the period. Defaults to 12 months before `to`. |
-| `to` | No | `YYYY-MM-DD` | End of the period. Defaults to today. |
+| `to` | No | `YYYY-MM-DD` | End of the period. Defaults to yesterday (D-1); today is never included. |
 
 If `from`/`to` are omitted entirely, the endpoint defaults to the **trailing 12 months**. All figures in the response — including `revenue.last12Months` and `revenue.trend` — are computed over the resolved `from`/`to` period; there is no longer a fixed "always trailing 12 months from today" figure. When you pass a custom `from`/`to`, `revenue.last12Months` reflects that custom period (same value as `revenue.total`), not a separate trailing-12-months number.
 
@@ -63,7 +63,7 @@ curl -X GET "https://your-api/api/business-health?companyId=<company-id>&from=20
     "netMargin": 41.7          // %
   },
   "risk": {
-    "overdueAmount": 3200.00,        // pending/scheduled expenses whose date is before the end of the requested period (or today, whichever comes first)
+    "overdueAmount": 3200.00,        // pending/scheduled expenses whose date is before the end of the requested period (capped at yesterday)
     "overdueRatio": 0.045,           // overdueAmount / (totalCosts + totalExpenses)
     "expenseConcentration": 25.7     // % of total costs+expenses in the single largest category
   },
@@ -73,7 +73,7 @@ curl -X GET "https://your-api/api/business-health?companyId=<company-id>&from=20
     "components": {
       "profitability": { "value": 83, "label": "Margem saudável" },
       "growth": { "value": 66, "label": "Estável, leve alta" },
-      "risk": { "value": 90, "label": "Baixo risco" }
+      "risk": { "value": 90, "label": "Segurança alta (baixo risco)" }
     }
   },
   "previousPeriod": {
@@ -86,7 +86,7 @@ curl -X GET "https://your-api/api/business-health?companyId=<company-id>&from=20
     "netProfit": 35000.00,
     "grossMargin": 64.3,
     "netMargin": 35.7,
-    "overdueAmount": 2100.00    // overdue as of the end of the PREVIOUS period, not "as of today"
+    "overdueAmount": 2100.00    // overdue as of the end of the PREVIOUS period, never including today
   },
   "comparison": {
     "revenue": { "current": 120000.00, "previous": 98000.00, "changeAbsolute": 22000.00, "changePercent": 22.4 },
@@ -119,7 +119,7 @@ All filtering by `transactions.status`/`type`/`categories.nature` happens inside
 | Field(s) | `status` | `type` | Date column | Notes |
 |---|---|---|---|---|
 | `revenue.*`, `costs.totalCosts`, `costs.totalExpenses`, `costs.fixed`, `costs.variable`, `costs.topCategories`, `profitability.*`, `previousPeriod.revenue/costs/expenses/grossProfit/netProfit/*Margin` | `paid` only | `income` / `expense` | `date` (transaction/purchase date) | Realized (accrual) figures. `costs.totalCosts` further requires `categories.nature = 'COST'`; `costs.totalExpenses` requires `nature = 'EXPENSE'` or no category. `investment` is never included. |
-| `risk.overdueAmount`, `previousPeriod.overdueAmount`, `comparison.overdueAmount` | `pending` or `scheduled` | `expense` only | `date < LEAST(period end, today)` | Not paid yet, and its date has already passed the end of the requested period (or today, whichever is earlier) — i.e., "vencido dentro do período". No lower bound: it includes anything overdue as of that point in time, not just debts dated inside the period. |
+| `risk.overdueAmount`, `previousPeriod.overdueAmount`, `comparison.overdueAmount` | `pending` or `scheduled` | `expense` only | `date < LEAST(period end, yesterday)` | Not paid yet, and its date has already passed the end of the requested period, capped at yesterday so the current day is never included. No lower bound: it includes anything overdue as of that point in time, not just debts dated inside the period. |
 
 **Important — this endpoint intentionally uses `date`, not `payment_date`, for `status = 'paid'` figures.** This matches `/api/dashboard/dre` (same `date`-based filtering), so revenue/cost/expense/profitability numbers here reconcile with the DRE screen. It **does not** match `/api/dashboard/summary` or `/api/dashboard/cash-flow`, which filter by `COALESCE(payment_date, date)` — the date money actually moved. For a normal expense these are usually the same day, but for a **credit-card purchase**, `date` is the original purchase date while `payment_date` is set only when the invoice is paid (often the following month). So a company that pays with credit cards can see different revenue/cost totals for the same month between this endpoint (and DRE) vs. Dashboard Summary/Cash Flow — this is expected, not a bug. If you're building a screen that shows both side by side, consider a short note explaining the difference, or pick one convention to surface consistently.
 
@@ -178,14 +178,14 @@ For context (not something the frontend needs to compute), here's how the backen
 
 Note: the formula floors at `value = 0`, so a 25% drop and a 60% drop both get the same `label` ("Queda acentuada de faturamento"). If you need finer-grained copy for very steep drops, read `revenue.trend.changePercent` directly instead of relying on `value`/`label`.
 
-**`risk`** — based on two things together: how much is overdue (`risk.overdueRatio`) and whether expenses are concentrated in one category (`risk.expenseConcentration`). Formula: `value = 100 − (overdueRatio × 100 × 0.6) − (max(0, concentration% − 40) × 0.4)`, clamped 0–100.
+**`risk`** — this is a positive safety score (higher is better), based on two things together: how much is overdue (`risk.overdueRatio`) and whether expenses are concentrated in one category (`risk.expenseConcentration`). Formula: `value = 100 − (overdueRatio × 100 × 0.6) − (max(0, concentration% − 40) × 0.4)`, clamped 0–100.
 
 | `value` | Typical cause | `label` |
 |---|---|---|
-| 90–100 | Little/no overdue, no category above ~40% of expenses | "Baixo risco" |
-| 70–89 | Some overdue and/or one category somewhat concentrated | "Risco moderado" |
-| 40–69 | Overdue ratio climbing and/or one category dominates expenses | "Atenção: atrasos ou concentração de despesas" |
-| 0–39 | High overdue ratio and/or one category is most of total expenses | "Risco alto: revise atrasos e diversifique despesas" |
+| 90–100 | Little/no overdue, no category above ~40% of expenses | "Segurança alta (baixo risco)" |
+| 70–89 | Some overdue and/or one category somewhat concentrated | "Segurança moderada" |
+| 40–69 | Overdue ratio climbing and/or one category dominates expenses | "Atenção: risco financeiro moderado" |
+| 0–39 | High overdue ratio and/or one category is most of total expenses | "Risco elevado: revise atrasos e diversifique despesas" |
 
 If you want to show *which* of the two risk factors is driving a low score, check `risk.overdueAmount` and `risk.expenseConcentration` directly — `label` doesn't distinguish between them.
 
@@ -207,7 +207,7 @@ Bucket definitions live in `src/controllers/business-health.controller.ts` (`PRO
 
 - Show `risk.overdueAmount` as a warning callout when > 0. Note it's scoped to expenses only and isn't the exact same number as `/api/dashboard/overdue` (see "Status & Date Semantics" above) — don't assume they'll match if shown on the same screen.
 - `risk.overdueRatio` is a fraction (e.g., `0.045` = 4.5%) — multiply by 100 for display.
-- `risk.overdueAmount` is now bound to the requested period (overdue as of the period's end date, or today if the period includes today) — filtering to a past period no longer shows today's overdue amount. Use `comparison.overdueAmount` for a "vs. período anterior" indicator.
+- `risk.overdueAmount` is bound to the requested period and capped at D-1 — filtering never includes today's overdue amount. Use `comparison.overdueAmount` for a "vs. período anterior" indicator.
 
 ### Period Selector
 
